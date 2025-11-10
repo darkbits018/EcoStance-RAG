@@ -38,26 +38,30 @@ def format_docs(docs: list[Document]) -> str:
     return "\n\n".join(doc.page_content for doc in docs)
 
 def create_rag_chain(collection_name: str):
-    """Creates a stateless RAG chain using LCEL."""
+    """Creates a stateful RAG chain with conversation memory using LCEL."""
     retriever = get_retriever(collection_name)
     llm = get_llm()
 
-    # Answering Prompt - Using human message instead of system for better Gemini compatibility
+    # Stateful Answering Prompt with chat history
     qa_prompt = ChatPromptTemplate.from_messages(
         [
-            ("human", """You are an expert assistant. Answer the following question based EXCLUSIVELY on the provided context below.
+            ("human", """You are an expert assistant. Answer the following question based EXCLUSIVELY on the provided context below, taking into account the conversation history for better context understanding.
 
 IMPORTANT RULES:
 - If the context contains the answer, provide it directly and concisely
 - If the context does not contain the answer, respond with "I don't know"
+- Use the chat history to understand follow-up questions and references (like "it", "that", "the previous answer")
 - DO NOT use any external knowledge or training data
 - DO NOT make up information
 - ONLY use information from the context provided
 
+CONVERSATION HISTORY:
+{chat_history}
+
 CONTEXT:
 {context}
 
-QUESTION: {question}
+CURRENT QUESTION: {question}
 
 ANSWER:"""),
         ]
@@ -70,11 +74,29 @@ ANSWER:"""),
         formatted_context = format_docs(docs)
         logger.info(f"Context being passed to LLM: {formatted_context}")
         return formatted_context
+    
+    # Define the chat history formatting function
+    def format_chat_history(inputs):
+        chat_history = inputs.get("chat_history", [])
+        if not chat_history:
+            return "No previous conversation."
+        
+        formatted_history = []
+        for i, message in enumerate(chat_history):
+            if i % 2 == 0:
+                formatted_history.append(f"Human: {message.content}")
+            else:
+                formatted_history.append(f"Assistant: {message.content}")
+        
+        return "\n".join(formatted_history)
 
-    # Define the stateless RAG chain
+    # Define the stateful RAG chain
     rag_chain = (
-        RunnablePassthrough.assign(context=RunnableLambda(retrieve_and_format))
-        | RunnableLambda(lambda x: logger.info(f"Final inputs to prompt: {x}") or x)
+        RunnablePassthrough.assign(
+            context=RunnableLambda(retrieve_and_format),
+            chat_history=RunnableLambda(format_chat_history)
+        )
+        | RunnableLambda(lambda x: logger.info(f"Final inputs to prompt: question={x.get('question')}, has_history={bool(x.get('chat_history'))}") or x)
         | qa_prompt
         | llm
         | StrOutputParser()
@@ -82,22 +104,25 @@ ANSWER:"""),
     
     return rag_chain
 
-def execute_query(collection_name: str, query: str) -> str:
+def execute_query(collection_name: str, query: str, chat_history: list = None) -> str:
     """
-    Executes a query against the stateless RAG chain.
+    Executes a query against the stateful RAG chain with conversation history.
     """
+    if chat_history is None:
+        chat_history = []
+    
     rag_chain = create_rag_chain(collection_name)
     
-    # The chain is invoked with the 'question' key
-    # To log context, we need to modify the chain to return it explicitly
-    # For now, we'll run the retriever separately to log context.
-    
+    # Log the retrieval for debugging
     retriever = get_retriever(collection_name)
     retrieved_docs = retriever.invoke(query)
     formatted_context = format_docs(retrieved_docs)
     logger.info(f"Retrieved Context: {formatted_context}")
 
-    # Invoke the rag_chain with the query
-    answer = rag_chain.invoke({"question": query})
+    # Invoke the rag_chain with the query and chat history
+    answer = rag_chain.invoke({
+        "question": query,
+        "chat_history": chat_history
+    })
     
     return answer

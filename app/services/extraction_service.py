@@ -1,6 +1,6 @@
 
 import os
-import fitz  # PyMuPDF, installed as PyMuPDF
+# import fitz  # PyMuPDF, installed as PyMuPDF - temporarily commented for testing
 import docx
 import pandas as pd
 from trafilatura import extract as trafilatura_extract

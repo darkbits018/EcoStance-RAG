@@ -34,7 +34,7 @@ async def query_collection(
                 processed_chat_history.append(AIMessage(content=message))
 
         logger.info("Executing query...")
-        answer = execute_query(collection_name, query)
+        answer = execute_query(collection_name, query, processed_chat_history)
         logger.info(f"Query executed successfully. Answer: {answer}")
         
         return {"answer": answer}
