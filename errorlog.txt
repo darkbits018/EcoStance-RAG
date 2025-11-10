@@ -1,0 +1,31 @@
+Embedding service: Using device 'cpu'
+INFO:     Started server process [17072]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:57332 - "GET /api/v1/manage/knowledge-bases/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57337 - "GET /api/v1/manage/knowledge-bases/ HTTP/1.1" 200 OK
+INFO:app.routers.query_router:Received query for collection: ecostance-demo
+INFO:app.routers.query_router:Query: Do you accept international payments
+INFO:app.routers.query_router:Chat history: []
+INFO:app.routers.query_router:Executing query...
+INFO:sentence_transformers.SentenceTransformer:Use pytorch device_name: cpu
+INFO:sentence_transformers.SentenceTransformer:Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+INFO:httpx:HTTP Request: GET https://6d5668bc-19f8-4d25-85d3-4d656e8022db.europe-west3-0.gcp.cloud.qdrant.io:6333 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://6d5668bc-19f8-4d25-85d3-4d656e8022db.europe-west3-0.gcp.cloud.qdrant.io:6333 "HTTP/1.1 200 OK"
+INFO:sentence_transformers.SentenceTransformer:Use pytorch device_name: cpu
+INFO:sentence_transformers.SentenceTransformer:Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+INFO:httpx:HTTP Request: GET https://6d5668bc-19f8-4d25-85d3-4d656e8022db.europe-west3-0.gcp.cloud.qdrant.io:6333 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://6d5668bc-19f8-4d25-85d3-4d656e8022db.europe-west3-0.gcp.cloud.qdrant.io:6333 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST https://6d5668bc-19f8-4d25-85d3-4d656e8022db.europe-west3-0.gcp.cloud.qdrant.io:6333/collections/ecostance-demo/points/search "HTTP/1.1 200 OK"
+INFO:app.services.query_service:Retrieved Context: A: Yes, pay the difference for premium features. Contact support. Verification and Security Q: How do you verify my credentials? A: We review uploaded docs (e.g., diplomas, transcripts) manually or via AI. Provide originals for fastest processing. Q: Is my data secure? A: Yes, we use AES-256 encryption and comply with GDPR/CCPA. Data is retained only for verification unless you opt for storage.
+
+Frequently Asked Questions (FAQs) for CertifyDigital Inc. Last Updated: November 10, 2025 General Q: What is a digital certificate? A: A secure, verifiable digital file (e.g., PDF with QR code) confirming your qualifications, skills, or achievements. It's blockchain-secured for tamper-proof authenticity. Q: How long does issuance take? A: 1-3 business days after document verification and payment. Rush options available for an extra fee. Q: Are certificates printable? A: Yes, high-resolution PDFs can be printed or shared digitally via email, LinkedIn, or resumes. Pricing and Payments Q: What are the costs? A: Basic certificate: $29. Premium (with blockchain embed): $49. Subscriptions start at $9/month for unlimited verifications. Prices exclude taxes. Q: Do you accept international payments? A: Yes, via credit card or PayPal. Currency conversion handled by our processor. Q: Can I upgrade after purchase? A: Yes, pay the difference for premium features. Contact support.
+
+Q: What if my certificate is lost? A: Download from your account dashboard anytime. Reissues cost $5. Support and Policies Q: How do I contact support? A: Email support@certifydigital.com or use live chat (Mon-Fri, 9 AM-5 PM EST). Q: What is your refund policy? A: See our full Refund Policy. Generally, 7-day window pre-issuance; non-refundable post-download. Q: Can I transfer a certificate? A: No, certificates are non-transferable and tied to your verified identity. For more, visit certifydigital.com/faqs or email us.
+INFO:httpx:HTTP Request: POST https://6d5668bc-19f8-4d25-85d3-4d656e8022db.europe-west3-0.gcp.cloud.qdrant.io:6333/collections/ecostance-demo/points/search "HTTP/1.1 200 OK"
+INFO:app.routers.query_router:Query executed successfully. Answer: As a large language model, I don't have a physical presence or a business entity, so I don't "accept" payments in the traditional sense. I am a program developed by Google.
+
+Therefore, the concept of me accepting international payments doesn't apply.
+
+If you are asking about a service that **uses** my capabilities and requires payment, then the answer would depend on that specific service's provider. They would be the ones to determine their payment methods and whether they accept international payments.
+INFO:     127.0.0.1:57338 - "POST /api/v1/query/ HTTP/1.1" 200 OK

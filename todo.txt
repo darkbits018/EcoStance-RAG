@@ -1,0 +1,46 @@
+## 🌟 Project Status: Core RAG System Complete 🌟
+
+The primary goal of building an end-to-end RAG system is complete. The application can successfully ingest documents, process them into a vector database, and use an LLM to answer questions based on the indexed content.
+
+---
+
+## 🚀 Next Steps: Production Hardening & Advanced Features
+
+Here are the recommended next steps to enhance the system's robustness, performance, and capabilities.
+
+### 1. Implement Real OCR for Scanned PDFs
+- **Priority:** High
+- **Task:** The `_ocr_page_image` function in `extraction_service.py` is currently a placeholder. This is the last remaining task from the initial setup.
+- **Action:**
+  - Install Tesseract OCR on the server.
+  - Install the Python wrapper: `pip install pytesseract Pillow`.
+  - Replace the placeholder code in `_ocr_page_image` with actual calls to `pytesseract` to process images.
+
+### 2. Convert Processing to a Background Task
+- **Priority:** High
+- **Task:** The current file processing is synchronous, meaning the API will hang until the entire (potentially slow) pipeline is complete. This is not suitable for production.
+- **Action:**
+  - Use FastAPI's `BackgroundTasks` to run the `process_and_upload_file` function in the background.
+  - The API endpoint (`/upload-to-qdrant/`) should return an immediate "processing started" response instead of waiting for completion.
+
+### 3. Enhance Testing Coverage
+- **Priority:** Medium
+- **Task:** The current tests only cover the indexing pipeline with a simple `.txt` file.
+- **Action:**
+  - Write tests for the `query_service.py` to ensure the RAG chain is behaving as expected.
+  - Create tests for the API endpoints themselves to check for correct request/response handling.
+  - Expand tests to include mock files for other formats (e.g., a dummy DOCX or PDF).
+
+### 4. Add Conversational Memory
+- **Priority:** Medium
+- **Task:** The query agent is currently stateless and cannot answer follow-up questions.
+- **Action:**
+  - Research and implement a memory strategy using LangChain (e.g., `ConversationBufferMemory`).
+  - This will likely involve managing conversation IDs to maintain state between API calls.
+
+### 5. Improve User Experience with Streaming
+- **Priority:** Low
+- **Task:** The query endpoint waits for the LLM to generate the full answer before responding.
+- **Action:**
+  - Modify the `query_router.py` and `query_service.py` to use `StreamingResponse`.
+  - Update the LangChain chain to support streaming output from the LLM, providing a much faster "time-to-first-word" for the user.
