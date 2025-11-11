@@ -19,7 +19,7 @@ def get_llm():
     """Initializes and returns the Gemini LLM."""
     if not GOOGLE_API_KEY:
         raise ValueError("GOOGLE_API_KEY must be set in environment variables.")
-    return ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", google_api_key=GOOGLE_API_KEY)
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", google_api_key=GOOGLE_API_KEY, temperature=0.1)
 
 def get_retriever(collection_name: str):
     """Initializes and returns a Qdrant retriever for a specific collection."""
@@ -45,25 +45,20 @@ def create_rag_chain(collection_name: str):
     # Stateful Answering Prompt with chat history
     qa_prompt = ChatPromptTemplate.from_messages(
         [
-            ("human", """You are an expert assistant. Answer the following question based EXCLUSIVELY on the provided context below, taking into account the conversation history for better context understanding.
+            ("human", """You are a helpful assistant. Based on the meeting transcript provided in the context below, answer the user's question.
 
-IMPORTANT RULES:
-- If the context contains the answer, provide it directly and concisely
-- If the context does not contain the answer, respond with "I don't know"
-- Use the chat history to understand follow-up questions and references (like "it", "that", "the previous answer")
-- DO NOT use any external knowledge or training data
-- DO NOT make up information
-- ONLY use information from the context provided
-
-CONVERSATION HISTORY:
-{chat_history}
-
-CONTEXT:
+Context from meeting transcript:
 {context}
 
-CURRENT QUESTION: {question}
+Question: {question}
 
-ANSWER:"""),
+Instructions:
+- Read through the meeting transcript carefully
+- Extract relevant information to answer the question
+- If you can find information related to the question in the transcript, provide a clear answer
+- If the transcript doesn't contain information to answer the question, say "I don't know"
+
+Answer:"""),
         ]
     )
 

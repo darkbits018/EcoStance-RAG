@@ -17,6 +17,7 @@ def get_qdrant_client():
 def create_collection_if_not_exists(client: QdrantClient, collection_name: str):
     """
     Checks if a collection exists in Qdrant and creates it if it doesn't.
+    Also ensures the required payload index is created on the flat 'source_filename' field.
     """
     try:
         client.get_collection(collection_name=collection_name)
@@ -32,13 +33,29 @@ def create_collection_if_not_exists(client: QdrantClient, collection_name: str):
         )
         print(f"Collection '{collection_name}' created successfully.")
 
+    # Ensure the payload index for the top-level 'source_filename' field exists.
+    try:
+        print(f"Ensuring payload index exists for 'source_filename' in '{collection_name}'...")
+        client.create_payload_index(
+            collection_name=collection_name,
+            field_name="source_filename",  # Indexing the top-level field
+            field_schema=models.PayloadSchemaType.KEYWORD,
+            wait=True
+        )
+        print("Payload index for 'source_filename' created or already exists.")
+    except Exception as e:
+        print(f"Warning: Could not create payload index for 'source_filename'. This may affect delete performance. Error: {e}")
+
+
 def upload_to_qdrant(client: QdrantClient, collection_name: str, chunks: List[Dict[str, Any]]):
     """
     Uploads a list of processed chunks (with embeddings and metadata) to Qdrant.
+    The payload is stored in a flat structure.
     """
     points_to_upload = []
     for chunk in chunks:
         point_id = str(uuid.uuid4())
+        # Create a flat payload by unpacking the metadata dictionary
         payload = {
             "text": chunk["text"],
             **chunk["metadata"]

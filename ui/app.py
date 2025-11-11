@@ -6,6 +6,33 @@ import time
 # --- Configuration ---
 BACKEND_URL = "http://127.0.0.1:8000/api/v1"
 
+# --- Custom CSS for better chat UI ---
+def inject_custom_css():
+    st.markdown("""
+    <style>
+    /* Make chat input sticky */
+    div[data-testid="stChatInput"] {
+        position: -webkit-sticky; /* for Safari */
+        position: sticky;
+        bottom: 0;
+        z-index: 100;
+        background-color: #0e1117; /* Match streamlit dark theme */
+    }
+
+    /* Style chat input */
+    .stChatInput > div {
+        border-radius: 25px !important;
+        border: 2px solid #4CAF50 !important;
+        box-shadow: 0 2px 10px rgba(76, 175, 80, 0.2) !important;
+    }
+    
+    .stChatInput input {
+        font-size: 16px !important;
+        padding: 12px 20px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # --- Helper Functions to Interact with Backend ---
 
 def get_knowledge_bases():
@@ -61,9 +88,42 @@ def delete_knowledge_base(collection_name):
         st.error(f"Error deleting knowledge base: {e}")
         return False
 
+def get_knowledge_base_details(collection_name):
+    """Gets detailed information about a knowledge base including files."""
+    try:
+        response = requests.get(f"{BACKEND_URL}/manage/knowledge-bases/{collection_name}/details")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error fetching knowledge base details: {e}")
+        return None
+
+def delete_file_from_kb(collection_name, filename):
+    """Deletes a specific file from a knowledge base."""
+    try:
+        response = requests.delete(f"{BACKEND_URL}/manage/knowledge-bases/{collection_name}/files/{filename}")
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error deleting file: {e}")
+        return False
+
+def reindex_file_in_kb(collection_name, filename):
+    """Reindexes a specific file in a knowledge base."""
+    try:
+        response = requests.post(f"{BACKEND_URL}/manage/knowledge-bases/{collection_name}/files/{filename}/reindex")
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error reindexing file: {e}")
+        return False
+
 # --- Streamlit UI ---
 
 st.set_page_config(page_title="EcoStance RAG Agent", layout="wide")
+
+# Inject custom CSS for sticky chat input
+inject_custom_css()
 
 st.title("EcoStance RAG Agent 🤖")
 st.write("Upload documents, manage your knowledge bases, and ask questions.")
@@ -101,7 +161,11 @@ with st.sidebar:
 
     st.subheader("Add New Document")
     new_kb_name = st.text_input("Enter new knowledge base name (or select existing):", value=selected_kb or "")
-    uploaded_file = st.file_uploader("Upload a document", type=['pdf', 'docx', 'txt', 'md'])
+    uploaded_file = st.file_uploader(
+        "Upload a document", 
+        type=['pdf', 'docx', 'txt', 'md', 'xlsx', 'xls', 'csv', 'html', 'htm', 'sql', 'jsonl'],
+        help="Supported formats: PDF, Word, Text, Markdown, Excel, CSV, HTML, SQL, JSONL"
+    )
 
     if st.button("Upload and Process"):
         if uploaded_file and new_kb_name:
@@ -121,28 +185,114 @@ with st.sidebar:
             st.warning("Please provide both a file and a knowledge base name.")
 
 
-# --- Main Chat Interface ---
-st.header(f"Chat with: {selected_kb}" if selected_kb else "Chat")
+# --- Main Interface with Tabs ---
+tab1, tab2 = st.tabs(["💬 Chat", "📁 Manage Files"])
 
-if selected_kb:
-    if "messages" not in st.session_state or st.session_state.get("current_kb") != selected_kb:
-        st.session_state.messages = []
-        st.session_state.current_kb = selected_kb
+with tab1:
+    st.header(f"Chat with: {selected_kb}" if selected_kb else "Chat")
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    if selected_kb:
+        if "messages" not in st.session_state or st.session_state.get("current_kb") != selected_kb:
+            st.session_state.messages = []
+            st.session_state.current_kb = selected_kb
 
-    if prompt := st.chat_input("Ask a question about the documents..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        # Display chat messages
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-        with st.chat_message("assistant"):
+        # Chat input
+        if prompt := st.chat_input("Ask a question about the documents..."):
+            # Add user message to session state
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            
+            # Get assistant response
             with st.spinner("Thinking..."):
                 response = query_rag_agent(selected_kb, prompt)
-                st.markdown(response)
+            
+            # Add assistant message to session state
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            
+            # Rerun to update the display
+            st.rerun()
+    else:
+        st.info("Please create or select a knowledge base from the sidebar to begin.")
+
+with tab2:
+    st.header("📁 Knowledge Base File Management")
+    
+    if selected_kb:
+        st.subheader(f"Files in '{selected_kb}'")
         
-        st.session_state.messages.append({"role": "assistant", "content": response})
-else:
-    st.info("Please create or select a knowledge base from the sidebar to begin.")
+        # Get knowledge base details
+        with st.spinner("Loading knowledge base details..."):
+            kb_details = get_knowledge_base_details(selected_kb)
+        
+        if kb_details and not kb_details.get('error'):
+            # Show knowledge base statistics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Points", kb_details.get('total_points', 0))
+            with col2:
+                st.metric("Files Count", kb_details.get('files_count', 0))
+            with col3:
+                st.metric("Vector Size", kb_details.get('vector_size', 0))
+            with col4:
+                total_chunks = sum(f.get('chunk_count', 0) for f in kb_details.get('files', []))
+                st.metric("Total Chunks", total_chunks)
+            
+            st.divider()
+            
+            # Show files table
+            files = kb_details.get('files', [])
+            if files:
+                st.subheader("📄 Indexed Files")
+                
+                for i, file_info in enumerate(files):
+                    with st.expander(f"📄 {file_info.get('filename', 'Unknown')} ({file_info.get('chunk_count', 0)} chunks)"):
+                        col1, col2 = st.columns([2, 1])
+                        
+                        with col1:
+                            st.write(f"**File Type:** {file_info.get('file_type', 'Unknown')}")
+                            st.write(f"**Upload Date:** {file_info.get('upload_date', 'Unknown')}")
+                            st.write(f"**File Size:** {file_info.get('file_size', 'Unknown')}")
+                            st.write(f"**Total Characters:** {file_info.get('total_characters', 0):,}")
+                            st.write(f"**Chunks:** {file_info.get('chunk_count', 0)}")
+                        
+                        with col2:
+                            filename = file_info.get('filename')
+                            
+                            # Reindex button
+                            if st.button(f"🔄 Reindex", key=f"reindex_{i}"):
+                                with st.spinner(f"Reindexing {filename}..."):
+                                    if reindex_file_in_kb(selected_kb, filename):
+                                        st.success(f"Successfully reindexed {filename}")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("Reindexing failed")
+                            
+                            # Delete button
+                            if st.button(f"🗑️ Delete", key=f"delete_{i}", type="secondary"):
+                                if st.session_state.get(f"confirm_delete_{i}"):
+                                    with st.spinner(f"Deleting {filename}..."):
+                                        if delete_file_from_kb(selected_kb, filename):
+                                            st.success(f"Successfully deleted {filename}")
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.error("Deletion failed")
+                                else:
+                                    st.session_state[f"confirm_delete_{i}"] = True
+                                    st.warning("Click delete again to confirm")
+                                    
+            else:
+                st.info("No files found in this knowledge base.")
+        
+        elif kb_details and kb_details.get('error'):
+            st.error(f"Error loading knowledge base: {kb_details.get('error')}")
+        else:
+            st.error("Failed to load knowledge base details.")
+    
+    else:
+        st.info("Please select a knowledge base from the sidebar to manage its files.")
