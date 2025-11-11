@@ -67,6 +67,16 @@ def process_file(file_path, collection_name):
         st.error(f"Error during file processing: {e}")
         return None
 
+def get_job_status(job_id):
+    """Get the status of a background processing job."""
+    try:
+        response = requests.get(f"{BACKEND_URL}/processing-status/{job_id}")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error getting job status: {e}")
+        return None
+
 def query_rag_agent(collection_name, query):
     """Sends a query to the RAG agent and gets an answer."""
     data = {'collection_name': collection_name, 'query': query}
@@ -174,15 +184,91 @@ with st.sidebar:
             
             if file_path:
                 st.success(f"File uploaded successfully. Path: {file_path}")
-                with st.spinner(f"Step 2/2: Processing file into '{new_kb_name}'..."):
-                    result = process_file(file_path, new_kb_name)
                 
-                if result:
-                    st.success("File processed and added to knowledge base successfully!")
+                # Start background processing
+                result = process_file(file_path, new_kb_name)
+                
+                if result and 'job_id' in result:
+                    job_id = result['job_id']
+                    st.success(f"Processing started! Job ID: {job_id}")
+                    
+                    # Store job ID in session state for tracking
+                    if 'processing_jobs' not in st.session_state:
+                        st.session_state.processing_jobs = []
+                    st.session_state.processing_jobs.append({
+                        'job_id': job_id,
+                        'filename': uploaded_file.name,
+                        'kb_name': new_kb_name,
+                        'started_at': time.time()
+                    })
+                    
+                    st.info("You can monitor the processing status in the 'Processing Jobs' section below.")
                     time.sleep(1)
                     st.rerun()
+                else:
+                    st.error("Failed to start processing job.")
         else:
             st.warning("Please provide both a file and a knowledge base name.")
+
+    # Processing Jobs Status Section
+    if 'processing_jobs' in st.session_state and st.session_state.processing_jobs:
+        st.divider()
+        st.subheader("📊 Processing Jobs")
+        
+        jobs_to_remove = []
+        for i, job in enumerate(st.session_state.processing_jobs):
+            job_status = get_job_status(job['job_id'])
+            
+            if job_status:
+                status = job_status.get('status', 'unknown')
+                progress_msg = job_status.get('progress_message', 'No progress info')
+                
+                # Create status indicator
+                if status == 'completed':
+                    status_icon = "✅"
+                    status_color = "green"
+                elif status == 'failed':
+                    status_icon = "❌"
+                    status_color = "red"
+                elif status == 'processing':
+                    status_icon = "🔄"
+                    status_color = "blue"
+                else:
+                    status_icon = "⏳"
+                    status_color = "orange"
+                
+                with st.expander(f"{status_icon} {job['filename']} → {job['kb_name']} ({status})"):
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        st.write(f"**Status:** {status}")
+                        st.write(f"**Progress:** {progress_msg}")
+                        if job_status.get('error_message'):
+                            st.error(f"Error: {job_status['error_message']}")
+                    
+                    with col2:
+                        if status in ['completed', 'failed']:
+                            if st.button(f"Remove", key=f"remove_job_{i}"):
+                                jobs_to_remove.append(i)
+                
+                # Auto-remove completed jobs after 5 minutes
+                if status in ['completed', 'failed']:
+                    elapsed = time.time() - job['started_at']
+                    if elapsed > 300:  # 5 minutes
+                        jobs_to_remove.append(i)
+        
+        # Remove completed/old jobs
+        for i in reversed(jobs_to_remove):
+            st.session_state.processing_jobs.pop(i)
+        
+        # Auto-refresh for active jobs
+        active_jobs = [j for j in st.session_state.processing_jobs 
+                      if get_job_status(j['job_id']) and 
+                      get_job_status(j['job_id']).get('status') in ['pending', 'processing']]
+        
+        if active_jobs:
+            time.sleep(2)
+            st.rerun()
 
 
 # --- Main Interface with Tabs ---
