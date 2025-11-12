@@ -398,20 +398,16 @@ with tab3:
     if not st.session_state.db_connected:
         st.subheader("Connect to Database")
 
-        # Database type selection OUTSIDE the form so it updates immediately
-        db_type = st.selectbox("Database Type", ["SQLite", "PostgreSQL", "MySQL"])
-
-        # Now create the form with the appropriate fields
         with st.form("db_connection_form"):
+            db_type = st.selectbox("Database Type", ["SQLite", "PostgreSQL", "MySQL"])
+
             if db_type == "SQLite":
                 db_path = st.text_input("Database File Path", "sqlite.db")
-                host = username = password = dbname = port = None
             else:
-                db_path = None
                 col1, col2 = st.columns(2)
                 with col1:
                     host = st.text_input("Host", "localhost")
-                    username = st.text_input("Username", "postgres" if db_type == "PostgreSQL" else "root")
+                    username = st.text_input("Username", "postgres")
                     dbname = st.text_input("Database Name", "mydatabase")
                 with col2:
                     port = st.text_input("Port", "5432" if db_type == "PostgreSQL" else "3306")
@@ -422,16 +418,10 @@ with tab3:
             if submitted:
                 db_uri = None
                 if db_type == "SQLite":
-                    if not db_path:
-                        st.error("Please provide a database file path")
-                    else:
-                        db_uri = f"sqlite:///{db_path}"
+                    db_uri = f"sqlite:///{db_path}"
                 else:
-                    if not all([host, username, password, dbname, port]):
-                        st.error("Please fill in all connection fields")
-                    else:
-                        driver = "postgresql" if db_type == "PostgreSQL" else "mysql+pymysql"
-                        db_uri = f"{driver}://{username}:{password}@{host}:{port}/{dbname}"
+                    driver = "postgresql" if db_type == "PostgreSQL" else "mysql+pymysql"
+                    db_uri = f"{driver}://{username}:{password}@{host}:{port}/{dbname}"
 
                 if db_uri:
                     with st.spinner("Connecting to database..."):
