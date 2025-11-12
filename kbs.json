@@ -1,8 +1,4 @@
 [
-    "test_background_processing",
-    "ui_integration_test",
-    "concurrent_test_1",
-    "concurrent_test_2",
-    "concurrent_test_3",
+    "test",
     "ecostance-demo"
 ]
