@@ -2,8 +2,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from ..db.database_connector import DatabaseConnector
 from ..db.sql_query_generator import SQLQueryGenerator
+from ..db.connection_manager import get_connection_manager
 import asyncio
 from urllib.parse import urlparse
+from typing import Optional
 
 router = APIRouter()
 
@@ -15,6 +17,16 @@ class QueryRequest(BaseModel):
 
 class ExecuteRequest(BaseModel):
     query: str
+
+class SaveConnectionRequest(BaseModel):
+    name: str
+    db_type: str
+    host: Optional[str] = None
+    port: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    database: Optional[str] = None
+    db_path: Optional[str] = None
 
 db_connector: DatabaseConnector = None
 query_generator: SQLQueryGenerator = None
@@ -123,3 +135,96 @@ async def execute_sql_query(request: ExecuteRequest):
             return {"message": results.get('message', 'Query executed successfully')}
     
     raise HTTPException(status_code=500, detail="Unexpected response format from database")
+
+@router.post("/db/connections/save")
+async def save_connection(request: SaveConnectionRequest):
+    """
+    Save a database connection profile securely.
+    """
+    try:
+        connection_manager = get_connection_manager()
+        
+        connection_data = {
+            'type': request.db_type,
+            'host': request.host,
+            'port': request.port,
+            'username': request.username,
+            'password': request.password,
+            'database': request.database,
+            'db_path': request.db_path
+        }
+        
+        success = connection_manager.save_connection(request.name, connection_data)
+        
+        if success:
+            return {"message": f"Connection '{request.name}' saved successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save connection")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/db/connections/list")
+async def list_connections():
+    """
+    Get list of saved connection profiles.
+    """
+    try:
+        connection_manager = get_connection_manager()
+        connections = connection_manager.list_connections()
+        
+        # Get info for each connection (without passwords)
+        connection_list = []
+        for name in connections:
+            info = connection_manager.get_connection_info(name)
+            if info:
+                connection_list.append({
+                    'name': name,
+                    'type': info.get('type', 'unknown'),
+                    'host': info.get('host', ''),
+                    'database': info.get('database', ''),
+                    'username': info.get('username', '')
+                })
+        
+        return connection_list
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/db/connections/{name}")
+async def load_connection(name: str):
+    """
+    Load a saved connection profile (with decrypted password).
+    """
+    try:
+        connection_manager = get_connection_manager()
+        connection_data = connection_manager.load_connection(name)
+        
+        if connection_data is None:
+            raise HTTPException(status_code=404, detail=f"Connection '{name}' not found")
+        
+        return connection_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/db/connections/{name}")
+async def delete_connection(name: str):
+    """
+    Delete a saved connection profile.
+    """
+    try:
+        connection_manager = get_connection_manager()
+        success = connection_manager.delete_connection(name)
+        
+        if success:
+            return {"message": f"Connection '{name}' deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail=f"Connection '{name}' not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

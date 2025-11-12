@@ -62,3 +62,6 @@ venv.bak/
 .dmypy.json
 dmypy.json
 uploads/
+
+# Database connections (contains encrypted credentials)
+.db_connections/

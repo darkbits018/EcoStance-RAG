@@ -37,3 +37,6 @@ google-generativeai
 # UI
 streamlit
 requests
+
+# Security
+cryptography

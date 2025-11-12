@@ -154,6 +154,47 @@ def db_execute_query(query):
     except requests.exceptions.RequestException as e:
         return {"error": str(e)}
 
+def db_save_connection(name, db_type, host, port, username, password, database, db_path):
+    try:
+        response = requests.post(f"{BACKEND_URL}/db/connections/save", json={
+            "name": name,
+            "db_type": db_type,
+            "host": host,
+            "port": port,
+            "username": username,
+            "password": password,
+            "database": database,
+            "db_path": db_path
+        })
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
+
+def db_list_connections():
+    try:
+        response = requests.get(f"{BACKEND_URL}/db/connections/list")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return []
+
+def db_load_connection(name):
+    try:
+        response = requests.get(f"{BACKEND_URL}/db/connections/{name}")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
+
+def db_delete_connection(name):
+    try:
+        response = requests.delete(f"{BACKEND_URL}/db/connections/{name}")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
+
 
 # --- Streamlit UI ---
 
@@ -398,27 +439,84 @@ with tab3:
     if not st.session_state.db_connected:
         st.subheader("Connect to Database")
 
+        # Saved connections section
+        saved_connections = db_list_connections()
+        
+        if saved_connections:
+            st.markdown("**📌 Saved Connections**")
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                selected_connection = st.selectbox(
+                    "Load a saved connection",
+                    options=["-- New Connection --"] + [conn['name'] for conn in saved_connections],
+                    key="saved_connection_selector"
+                )
+            
+            with col2:
+                if selected_connection != "-- New Connection --":
+                    if st.button("🗑️ Delete", key="delete_saved_conn"):
+                        result = db_delete_connection(selected_connection)
+                        if "error" not in result:
+                            st.success(f"Deleted '{selected_connection}'")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to delete: {result['error']}")
+            
+            # Load connection if selected
+            if selected_connection != "-- New Connection --":
+                conn_data = db_load_connection(selected_connection)
+                if "error" not in conn_data:
+                    st.session_state.loaded_connection = conn_data
+                    st.info(f"✅ Loaded: {conn_data.get('type', 'Unknown')} - {conn_data.get('database', 'N/A')}")
+            else:
+                st.session_state.loaded_connection = None
+            
+            st.divider()
+
         # Database type selection OUTSIDE the form so it updates immediately
-        db_type = st.selectbox("Database Type", ["SQLite", "PostgreSQL", "MySQL"])
+        if 'loaded_connection' in st.session_state and st.session_state.loaded_connection:
+            db_type = st.session_state.loaded_connection.get('type', 'SQLite')
+        else:
+            db_type = st.selectbox("Database Type", ["SQLite", "PostgreSQL", "MySQL"])
 
         # Now create the form with the appropriate fields
         with st.form("db_connection_form"):
+            # Pre-fill with loaded connection data if available
+            loaded = st.session_state.get('loaded_connection', {})
+            
             if db_type == "SQLite":
-                db_path = st.text_input("Database File Path", "sqlite.db")
+                db_path = st.text_input("Database File Path", loaded.get('db_path', 'sqlite.db'))
                 host = username = password = dbname = port = None
             else:
                 db_path = None
                 col1, col2 = st.columns(2)
                 with col1:
-                    host = st.text_input("Host", "localhost")
-                    username = st.text_input("Username", "postgres" if db_type == "PostgreSQL" else "root")
-                    dbname = st.text_input("Database Name", "mydatabase")
+                    host = st.text_input("Host", loaded.get('host', 'localhost'))
+                    username = st.text_input("Username", loaded.get('username', 'postgres' if db_type == "PostgreSQL" else "root"))
+                    dbname = st.text_input("Database Name", loaded.get('database', 'mydatabase'))
                 with col2:
-                    port = st.text_input("Port", "5432" if db_type == "PostgreSQL" else "3306")
-                    password = st.text_input("Password", type="password")
+                    port = st.text_input("Port", loaded.get('port', '5432' if db_type == "PostgreSQL" else '3306'))
+                    password = st.text_input("Password", loaded.get('password', ''), type="password")
+            
+            # Option to save connection
+            st.divider()
+            save_connection = st.checkbox("💾 Save this connection", value=False)
+            connection_name = ""
+            if save_connection:
+                connection_name = st.text_input("Connection Name", placeholder="e.g., Production DB, Local Dev")
 
-            submitted = st.form_submit_button("Connect")
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                submitted = st.form_submit_button("Connect", type="primary", use_container_width=True)
+            with col_btn2:
+                clear_btn = st.form_submit_button("Clear", use_container_width=True)
 
+            if clear_btn:
+                st.session_state.loaded_connection = None
+                st.rerun()
+            
             if submitted:
                 db_uri = None
                 if db_type == "SQLite":
@@ -439,10 +537,26 @@ with tab3:
                         if "error" in result:
                             st.error(f"Connection failed: {result['error']}")
                         else:
+                            # Save connection if requested
+                            if save_connection and connection_name:
+                                save_result = db_save_connection(
+                                    name=connection_name,
+                                    db_type=db_type,
+                                    host=host,
+                                    port=port,
+                                    username=username,
+                                    password=password,
+                                    database=dbname,
+                                    db_path=db_path
+                                )
+                                if "error" not in save_result:
+                                    st.success(f"✅ Connection saved as '{connection_name}'")
+                            
                             st.session_state.db_connected = True
                             st.session_state.db_type = db_type
                             st.session_state.db_messages = []
                             st.success(result['message'])
+                            time.sleep(1)
                             st.rerun()
 
     if st.session_state.db_connected:
