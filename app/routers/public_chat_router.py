@@ -315,29 +315,58 @@ async def get_admin_config(
         
         # Get or create config
         from ..models.tenant import Tenant
-        tenant = db.query(Tenant).filter(Tenant.id == current_user.tenant_id).first()
-        config = service.get_or_create_config(current_user.tenant_id, tenant.name if tenant else "Unknown")
         
-        config_dict = config.to_dict(include_sensitive=True)
+        # current_user is a dict, not an object
+        tenant_id = current_user["tenant_id"]
         
-        return AdminPublicChatConfigResponse(
-            enabled=config_dict["enabled"],
-            allowed_kbs=config_dict["allowed_kbs"],
-            welcome_message=config_dict["welcome_message"],
-            suggested_questions=config_dict["suggested_questions"],
-            branding=BrandingConfig(**config_dict["branding"]),
-            rate_limit=RateLimitConfig(**config_dict["rate_limit"]),
-            features=FeaturesConfig(**config_dict["features"]),
-            created_at=config_dict.get("created_at"),
-            updated_at=config_dict.get("updated_at"),
-            updated_by=config_dict.get("updated_by")
-        )
+        try:
+            tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+            tenant_name = tenant.name if tenant else "Unknown"
+        except Exception as e:
+            logger.warning(f"Could not fetch tenant name: {e}")
+            tenant_name = "Unknown"
         
+        config = service.get_or_create_config(tenant_id, tenant_name)
+        logger.info(f"Got config for tenant {tenant_id}")
+        
+        try:
+            config_dict = config.to_dict(include_sensitive=True)
+            logger.info(f"Config dict: {config_dict}")
+        except Exception as dict_error:
+            logger.error(f"Error converting config to dict: {str(dict_error)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error converting configuration: {str(dict_error)}"
+            )
+        
+        try:
+            return AdminPublicChatConfigResponse(
+                enabled=config_dict["enabled"],
+                allowed_kbs=config_dict["allowed_kbs"],
+                welcome_message=config_dict["welcome_message"],
+                suggested_questions=config_dict["suggested_questions"],
+                branding=BrandingConfig(**config_dict["branding"]),
+                rate_limit=RateLimitConfig(**config_dict["rate_limit"]),
+                features=FeaturesConfig(**config_dict["features"]),
+                created_at=config_dict.get("created_at"),
+                updated_at=config_dict.get("updated_at"),
+                updated_by=config_dict.get("updated_by")
+            )
+        except Exception as response_error:
+            logger.error(f"Error creating response: {str(response_error)}", exc_info=True)
+            logger.error(f"Config dict was: {config_dict}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error creating response: {str(response_error)}"
+            )
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting admin config: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while fetching configuration"
+            detail=f"An error occurred while fetching configuration: {str(e)}"
         )
 
 
@@ -362,9 +391,9 @@ async def update_admin_config(
         
         # Update configuration
         config = service.update_config(
-            tenant_id=current_user.tenant_id,
+            tenant_id=current_user["tenant_id"],
             update_data=update_data,
-            updated_by=current_user.email
+            updated_by=current_user.get("email", "unknown")
         )
         
         config_dict = config.to_dict(include_sensitive=True)
@@ -414,7 +443,12 @@ async def get_available_kbs(
     """
     try:
         service = PublicChatService(db)
-        kbs = service.get_available_kbs(current_user.tenant_id)
+        try:
+            kbs = service.get_available_kbs(current_user["tenant_id"])
+        except Exception as kb_error:
+            logger.error(f"Error in get_available_kbs: {str(kb_error)}", exc_info=True)
+            # Return empty list if there's an error
+            kbs = []
         
         return AvailableKnowledgeBasesResponse(knowledge_bases=kbs)
         
@@ -422,7 +456,7 @@ async def get_available_kbs(
         logger.error(f"Error getting available KBs: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while fetching knowledge bases"
+            detail=f"An error occurred while fetching knowledge bases: {str(e)}"
         )
 
 
@@ -456,7 +490,7 @@ async def get_analytics(
             start = end - timedelta(days=days)
         
         # Get analytics
-        analytics = service.get_analytics(current_user.tenant_id, start, end)
+        analytics = service.get_analytics(current_user["tenant_id"], start, end)
         
         return PublicChatAnalyticsResponse(
             period={
@@ -498,7 +532,7 @@ async def get_session_details(
     try:
         service = PublicChatService(db)
         
-        session_details = service.get_session_details(session_id, current_user.tenant_id)
+        session_details = service.get_session_details(session_id, current_user["tenant_id"])
         if not session_details:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

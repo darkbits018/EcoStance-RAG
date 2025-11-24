@@ -12,8 +12,8 @@ from .database_tools import (
 )
 
 from .knowledge_base_tools import (
-    search_knowledge_base,
-    list_available_knowledge_bases
+    create_search_knowledge_base_tool,
+    create_list_knowledge_bases_tool
 )
 
 __all__ = [
@@ -23,6 +23,6 @@ __all__ = [
     "get_delivery_estimate",
     "check_cod_payment_status",
     "get_complaint_status",
-    "search_knowledge_base",
-    "list_available_knowledge_bases",
+    "create_search_knowledge_base_tool",
+    "create_list_knowledge_bases_tool",
 ]

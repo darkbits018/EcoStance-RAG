@@ -21,8 +21,8 @@ from .tools.database_tools import (
     get_complaint_status,
 )
 from .tools.knowledge_base_tools import (
-    search_knowledge_base,
-    list_available_knowledge_bases
+    create_search_knowledge_base_tool,
+    create_list_knowledge_bases_tool
 )
 
 logger = logging.getLogger(__name__)
@@ -57,15 +57,16 @@ Available Tools:
 
 **Knowledge Base Tools:**
 - list_available_knowledge_bases(): List all available knowledge bases
-- search_knowledge_base(collection_name, query): Search company documents for policies, FAQs, procedures
+- search_knowledge_base(kb_name, query): Search company documents for policies, FAQs, procedures
 
 When to use each type:
 - Use shipment tools for: "Track QS250001", "Where is my order?", "Check payment", "Delivery estimate"
 - Use knowledge base tools for: "What is your policy?", "How do I...?", "Tell me about...", "What are your rates?"
-- If unsure which knowledge base to search, first use list_available_knowledge_bases()
 
-IMPORTANT: When a user asks about policies, procedures, rates, or general information (not about a specific shipment),
-you MUST use the search_knowledge_base tool. Do not try to answer from memory.
+IMPORTANT: When a user asks about policies, procedures, rates, or general information (not about a specific shipment):
+1. FIRST call list_available_knowledge_bases() to see what KBs exist
+2. THEN call search_knowledge_base(kb_name, query) with one of the available KB names
+3. Do NOT assume KB names - always list them first if you haven't already in this conversation
 
 Remember:
 - Shipment IDs are in format: QS250XXX
@@ -78,24 +79,34 @@ When you need to use a tool, call it directly and use the result to answer the c
 class AgentService:
     """Service for managing agent conversations with tool calling"""
     
-    def __init__(self):
+    def __init__(self, tenant_id: str = None):
         self.llm = ChatGoogleGenerativeAI(
             model=AGENT_MODEL,
             google_api_key=GOOGLE_API_KEY,
             temperature=AGENT_TEMPERATURE
         )
         
+        self.tenant_id = tenant_id
+        
         # Define available tools
-        self.tools = [
+        base_tools = [
             get_shipment_status,
             search_shipments_by_customer,
             track_by_tracking_number,
             get_delivery_estimate,
             check_cod_payment_status,
             get_complaint_status,
-            search_knowledge_base,
-            list_available_knowledge_bases
         ]
+        
+        # Add tenant-specific KB tools if tenant_id is provided
+        if tenant_id:
+            kb_tools = [
+                create_search_knowledge_base_tool(tenant_id),
+                create_list_knowledge_bases_tool(tenant_id)
+            ]
+            self.tools = base_tools + kb_tools
+        else:
+            self.tools = base_tools
         
         # Create a tool map for easy lookup when executing
         self.tool_map = {tool.name: tool for tool in self.tools}
@@ -242,10 +253,17 @@ Is there anything related to shipments or logistics I can help you with?"""
                     "success": True
                 }
             
+            # Build context about selected KB and DB
+            context_info = ""
+            if session_id in self.session_kb:
+                context_info += f"\n\nIMPORTANT: User has selected knowledge base '{self.session_kb[session_id]}'. If you need to search knowledge base, you MUST use kb_name='{self.session_kb[session_id]}'."
+            if session_id in self.session_db:
+                context_info += f"\n\nDatabase connection: {self.session_db[session_id]}"
+            
             # Use LLM to analyze query and decide which tool to use
             analysis_prompt = f"""Analyze this customer query and determine which tool to use.
 
-Query: "{message}"
+Query: "{message}"{context_info}
 
 Available tools:
 {self._get_tool_descriptions()}
@@ -266,7 +284,7 @@ If no tool is needed (greeting, clarification, etc.), respond with:
 Examples:
 - "Track QS250001" → {{"tool": "get_shipment_status", "args": {{"shipment_id": "QS250001"}}}}
 - "My phone is 9224217802" → {{"tool": "search_shipments_by_customer", "args": {{"phone": "9224217802"}}}}
-- "What are your rates?" → {{"tool": "search_knowledge_base", "args": {{"query": "shipping rates"}}}}
+- "What are your rates?" → {{"tool": "search_knowledge_base", "args": {{"kb_name": "policies", "query": "shipping rates"}}}}
 - "Hello" → {{"tool": "none", "response": "Hi! How can I help you today?"}}"""
             
             logger.info(f"Asking LLM to analyze query: {message}")
@@ -446,6 +464,3 @@ Once connected, I'll be able to:
             return True
         return False
 
-
-# Global agent service instance
-agent_service = AgentService()

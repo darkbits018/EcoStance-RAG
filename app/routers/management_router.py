@@ -70,6 +70,23 @@ async def create_knowledge_base(
         tenant_service.create_tenant_collection(tenant_id, kb_name)
         logger.info(f"Collection {collection_name} created successfully")
         
+        # Add to kbs.json for tracking
+        from app.services.kb_service import add_kb
+        add_kb(collection_name)
+        logger.info(f"Added {collection_name} to kbs.json")
+        
+        # Save KB to database
+        from ..models.tenant_knowledge_base import TenantKnowledgeBase
+        kb_record = TenantKnowledgeBase(
+            tenant_id=tenant_id,
+            kb_name=kb_name,
+            collection_name=collection_name,
+            document_count=0
+        )
+        db.add(kb_record)
+        db.commit()
+        logger.info(f"KB record saved to database")
+        
         # Log successful creation (non-blocking)
         try:
             audit = AuditService(db)
@@ -126,6 +143,9 @@ async def list_knowledge_bases(
     
     Requires: KB_VIEW permission
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     tenant_id = current_user["tenant_id"]
     user_id = current_user["user_id"]
     
@@ -135,20 +155,28 @@ async def list_knowledge_bases(
     try:
         # Get all collections and filter for tenant
         all_kbs = get_all_knowledge_bases()
+        logger.info(f"All collections in Qdrant: {all_kbs}")
+        
         qdrant_client = get_qdrant_client()
         tenant_service = get_tenant_service(qdrant_client)
+        
+        sanitized_tenant = tenant_service._sanitize_name(tenant_id)
+        logger.info(f"Looking for tenant: {tenant_id}, sanitized: {sanitized_tenant}")
         
         # Filter collections that belong to this tenant using proper parsing
         tenant_kbs = []
         for collection_name in all_kbs:
             # Parse collection name to extract tenant_id and kb_name
             parsed = tenant_service.parse_collection_name(collection_name)
+            logger.info(f"Collection: {collection_name}, parsed: {parsed}")
             
             # Check if this collection belongs to the current tenant
-            if parsed and parsed["tenant_id"] == tenant_service._sanitize_name(tenant_id):
+            if parsed and parsed["tenant_id"] == sanitized_tenant:
                 # Add the KB name (not the full collection name)
+                logger.info(f"Match! Adding KB: {parsed['kb_name']}")
                 tenant_kbs.append(parsed["kb_name"])
         
+        logger.info(f"Returning KBs for tenant: {tenant_kbs}")
         return tenant_kbs
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve knowledge bases: {e}")
@@ -235,14 +263,22 @@ async def get_knowledge_base_details_endpoint(
     # Check permission
     rbac = RBACService(db)
     rbac.require_permission(tenant_id, user_id, Permission.KB_VIEW)
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
         # Generate tenant-specific collection name
         qdrant_client = get_qdrant_client()
         tenant_service = get_tenant_service(qdrant_client)
         collection_name = tenant_service.get_collection_name(tenant_id, kb_name)
         
+        logger.info(f"Checking details for KB '{kb_name}', collection: {collection_name}")
+        
         # Verify collection exists
-        if not tenant_service.collection_exists(collection_name):
+        exists = tenant_service.collection_exists(collection_name)
+        logger.info(f"Collection exists check: {exists}")
+        
+        if not exists:
             raise HTTPException(
                 status_code=404,
                 detail=f"Knowledge base '{kb_name}' not found for tenant"

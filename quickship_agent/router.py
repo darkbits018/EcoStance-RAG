@@ -3,21 +3,33 @@ FastAPI Router for QuickShip AI Agent
 Provides REST API endpoints for the agent
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 import uuid
 import logging
 
-from .agent_service import agent_service
+from .agent_service import AgentService
+from app.auth.dependencies import get_current_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Store agent services per tenant
+_agent_services: Dict[str, AgentService] = {}
+
+
+def get_agent_service(tenant_id: str) -> AgentService:
+    """Get or create an agent service for a tenant"""
+    if tenant_id not in _agent_services:
+        _agent_services[tenant_id] = AgentService(tenant_id=tenant_id)
+    return _agent_services[tenant_id]
 
 
 class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     message: str
+    tenant_id: Optional[str] = None  # Optional - will be extracted from auth if not provided
     knowledge_base: Optional[str] = None  # Selected KB from sidebar
     database_connection: Optional[str] = None  # Selected database connection name
 
@@ -35,12 +47,16 @@ class ConversationHistory(BaseModel):
 
 
 @router.post("/agent/chat", response_model=ChatResponse)
-async def chat_with_agent(request: ChatRequest):
+async def chat_with_agent(
+    request: ChatRequest,
+    current_user: dict = Depends(get_current_user)
+):
     """
     Chat with the QuickShip AI agent
     
     - **session_id**: Optional session ID (will be generated if not provided)
     - **message**: User message/query
+    - **tenant_id**: Optional tenant ID (extracted from auth if not provided)
     - **knowledge_base**: Optional knowledge base name to search (from sidebar selection)
     - **database_connection**: Optional database connection name (from UI database selector)
     """
@@ -48,7 +64,16 @@ async def chat_with_agent(request: ChatRequest):
         # Generate session ID if not provided
         session_id = request.session_id or str(uuid.uuid4())
         
-        logger.info(f"Agent chat request - Session: {session_id}, Message: {request.message}, KB: {request.knowledge_base}, DB: {request.database_connection}")
+        # Get tenant_id from request or current user
+        tenant_id = request.tenant_id or current_user.get("tenant_id")
+        
+        if not tenant_id:
+            raise HTTPException(status_code=400, detail="Tenant ID is required")
+        
+        logger.info(f"Agent chat request - Tenant: {tenant_id}, Session: {session_id}, Message: {request.message}, KB: {request.knowledge_base}, DB: {request.database_connection}")
+        
+        # Get tenant-specific agent service
+        agent_service = get_agent_service(tenant_id)
         
         # Process message through agent with selected KB and DB
         result = agent_service.chat(
