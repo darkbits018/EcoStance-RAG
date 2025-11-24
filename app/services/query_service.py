@@ -31,7 +31,8 @@ def get_retriever(collection_name: str):
         embedding=embeddings,
         content_payload_key="text",
     )
-    return qdrant_store.as_retriever(search_kwargs={"k": 3})
+    # Increase k to retrieve more chunks for better coverage
+    return qdrant_store.as_retriever(search_kwargs={"k": 5})
 
 def format_docs(docs: list[Document]) -> str:
     """Formats a list of Documents into a single string."""
@@ -45,18 +46,20 @@ def create_rag_chain(collection_name: str):
     # Stateful Answering Prompt with chat history
     qa_prompt = ChatPromptTemplate.from_messages(
         [
-            ("human", """You are a helpful assistant. Based on the meeting transcript provided in the context below, answer the user's question.
+            ("human", """You are a helpful assistant. Answer the user's question using ONLY the information provided in the context below.
 
-Context from meeting transcript:
+Context:
 {context}
 
 Question: {question}
 
-Instructions:
-- Read through the meeting transcript carefully
-- Extract relevant information to answer the question
-- If you can find information related to the question in the transcript, provide a clear answer
-- If the transcript doesn't contain information to answer the question, say "I don't know"
+CRITICAL INSTRUCTIONS:
+- Answer ONLY based on information explicitly stated in the context above
+- Do NOT make assumptions or infer information not directly stated
+- Do NOT combine unrelated pieces of information
+- Quote or paraphrase directly from the context when answering
+- If the context does not contain the specific information needed to answer the question, respond with: "I don't have information about that in the knowledge base."
+- Be accurate and precise - do not add extra details not found in the context
 
 Answer:"""),
         ]
@@ -99,9 +102,15 @@ Answer:"""),
     
     return rag_chain
 
-def execute_query(collection_name: str, query: str, chat_history: list = None) -> str:
+def execute_query(collection_name: str, query: str, chat_history: list = None, tenant_id: str = None) -> str:
     """
     Executes a query against the stateful RAG chain with conversation history.
+    
+    Args:
+        collection_name: Qdrant collection name
+        query: User query
+        chat_history: Previous conversation messages
+        tenant_id: Tenant identifier for filtering (optional, for future use)
     """
     if chat_history is None:
         chat_history = []
@@ -112,7 +121,7 @@ def execute_query(collection_name: str, query: str, chat_history: list = None) -
     retriever = get_retriever(collection_name)
     retrieved_docs = retriever.invoke(query)
     formatted_context = format_docs(retrieved_docs)
-    logger.info(f"Retrieved Context: {formatted_context}")
+    logger.info(f"Retrieved Context for tenant {tenant_id}: {formatted_context}")
 
     # Invoke the rag_chain with the query and chat history
     answer = rag_chain.invoke({

@@ -96,7 +96,7 @@ def get_knowledge_base_details(collection_name: str) -> Dict[str, Any]:
         
         return {
             'name': collection_name,
-            'total_points': collection_info.points_count,
+            'vectors_count': collection_info.points_count,
             'vector_size': collection_info.config.params.vectors.size,
             'files_count': len(files),
             'files': files
@@ -107,6 +107,8 @@ def get_knowledge_base_details(collection_name: str) -> Dict[str, Any]:
         return {
             'name': collection_name,
             'error': str(e),
+            'vectors_count': 0,
+            'files_count': 0,
             'files': []
         }
 

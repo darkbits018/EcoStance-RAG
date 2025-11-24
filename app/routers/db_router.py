@@ -1,11 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from pydantic import BaseModel
 from ..db.database_connector import DatabaseConnector
 from ..db.sql_query_generator import SQLQueryGenerator
 from ..db.connection_manager import get_connection_manager
+from ..auth.dependencies import get_current_user
+from ..services.file_access_service import get_file_access_service
 import asyncio
 from urllib.parse import urlparse
 from typing import Optional
+import os
+from sqlalchemy.orm import Session
+from ..db.database import get_db
 
 router = APIRouter()
 
@@ -195,6 +200,7 @@ async def list_connections():
 async def load_connection(name: str):
     """
     Load a saved connection profile (with decrypted password).
+    Returns connection data with a ready-to-use db_uri field.
     """
     try:
         connection_manager = get_connection_manager()
@@ -202,6 +208,36 @@ async def load_connection(name: str):
         
         if connection_data is None:
             raise HTTPException(status_code=404, detail=f"Connection '{name}' not found")
+        
+        # Generate db_uri for easy connection
+        db_type = connection_data.get('type')
+        
+        if db_type == 'sqlite':
+            # For SQLite, database field contains the full URI or path
+            db_path = connection_data.get('database') or connection_data.get('db_path')
+            if db_path and db_path.startswith('sqlite:///'):
+                connection_data['db_uri'] = db_path
+            else:
+                connection_data['db_uri'] = f"sqlite:///{db_path}"
+        elif db_type in ['postgresql', 'postgres']:
+            host = connection_data.get('host')
+            port = connection_data.get('port', 5432)
+            username = connection_data.get('username')
+            password = connection_data.get('password')
+            database = connection_data.get('database')
+            connection_data['db_uri'] = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+        elif db_type == 'mysql':
+            host = connection_data.get('host')
+            port = connection_data.get('port', 3306)
+            username = connection_data.get('username')
+            password = connection_data.get('password')
+            database = connection_data.get('database')
+            connection_data['db_uri'] = f"mysql://{username}:{password}@{host}:{port}/{database}"
+        elif db_type == 'mongodb':
+            host = connection_data.get('host')
+            port = connection_data.get('port', 27017)
+            database = connection_data.get('database')
+            connection_data['db_uri'] = f"mongodb://{host}:{port}/{database}"
         
         return connection_data
         
@@ -214,13 +250,20 @@ async def load_connection(name: str):
 async def delete_connection(name: str):
     """
     Delete a saved connection profile.
+    Use '__empty__' as the name to delete connections with empty names.
     """
     try:
         connection_manager = get_connection_manager()
+        
+        # Handle empty name deletion
+        if name == "__empty__":
+            name = ""
+        
         success = connection_manager.delete_connection(name)
         
         if success:
-            return {"message": f"Connection '{name}' deleted successfully"}
+            display_name = "unnamed connection" if name == "" else f"'{name}'"
+            return {"message": f"Connection {display_name} deleted successfully"}
         else:
             raise HTTPException(status_code=404, detail=f"Connection '{name}' not found")
             
@@ -228,3 +271,187 @@ async def delete_connection(name: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/db/upload-sqlite")
+async def upload_sqlite_database(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload a SQLite database file for use with the AI Agent.
+    Returns the file path that can be used with /db/connect endpoint.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    tenant_id = current_user["tenant_id"]
+    
+    # Validate file type
+    allowed_extensions = ['.db', '.sqlite', '.sqlite3']
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Only SQLite files ({', '.join(allowed_extensions)}) are allowed."
+        )
+    
+    # Check file size (max 100MB)
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    
+    max_size = 100 * 1024 * 1024  # 100MB
+    if file_size > max_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File size exceeds maximum allowed size of {max_size / (1024*1024):.0f}MB"
+        )
+    
+    try:
+        # Create tenant-specific database directory
+        file_service = get_file_access_service()
+        base_dir = file_service.ensure_tenant_directory(tenant_id)
+        db_dir = os.path.join(base_dir, "databases")
+        os.makedirs(db_dir, exist_ok=True)
+        
+        # Save file
+        file_path = os.path.join(db_dir, file.filename)
+        
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+        
+        # Generate SQLite URI
+        # Convert to absolute path and normalize for SQLite
+        abs_path = os.path.abspath(file_path)
+        # Convert Windows backslashes to forward slashes for SQLite URI
+        abs_path = abs_path.replace('\\', '/')
+        sqlite_uri = f"sqlite:///{abs_path}"
+        
+        logger.info(f"SQLite database uploaded for tenant {tenant_id}: {file.filename}")
+        
+        return {
+            "message": "SQLite database uploaded successfully",
+            "file_path": sqlite_uri,
+            "filename": file.filename,
+            "size_mb": round(file_size / (1024 * 1024), 2),
+            "tenant_id": tenant_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to upload SQLite database: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+
+
+@router.get("/db/status")
+async def get_connection_status():
+    """
+    Get the current database connection status.
+    Returns information about the connected database or null if not connected.
+    """
+    if not db_connector:
+        return {
+            "connected": False,
+            "database": None
+        }
+    
+    try:
+        # Get basic connection info
+        connection_info = {
+            "connected": True,
+            "database": {
+                "type": db_connector.db_type,
+                "status": "active"
+            }
+        }
+        
+        # Add database-specific info
+        if db_connector.db_type in ['postgresql', 'mysql']:
+            connection_info["database"]["host"] = getattr(db_connector.engine.url, 'host', 'unknown')
+            connection_info["database"]["database"] = getattr(db_connector.engine.url, 'database', 'unknown')
+        elif db_connector.db_type == 'sqlite':
+            connection_info["database"]["path"] = str(db_connector.engine.url.database)
+        elif db_connector.db_type == 'mongodb':
+            connection_info["database"]["host"] = db_connector.client.address[0] if db_connector.client else 'unknown'
+            connection_info["database"]["database"] = db_connector.db.name if db_connector.db else 'unknown'
+        
+        return connection_info
+        
+    except Exception as e:
+        return {
+            "connected": True,
+            "database": {
+                "type": db_connector.db_type if db_connector else "unknown",
+                "status": "error",
+                "error": str(e)
+            }
+        }
+
+
+@router.get("/db/schema")
+async def get_database_schema():
+    """
+    Get the schema of the currently connected database.
+    Returns list of tables with their columns and types.
+    """
+    if not db_connector:
+        raise HTTPException(status_code=400, detail="Database not connected. Please connect to a database first.")
+    
+    try:
+        loop = asyncio.get_event_loop()
+        schema = await loop.run_in_executor(None, db_connector.get_schema_info)
+        
+        if not isinstance(schema, dict):
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve schema: {schema}")
+        
+        # Transform schema into frontend-friendly format
+        tables = []
+        
+        # Handle SQL databases (has 'tables' key)
+        if 'tables' in schema:
+            for table_name, table_info in schema['tables'].items():
+                columns = []
+                # Columns is a list of dicts with name, type, nullable, default
+                for col in table_info.get('columns', []):
+                    columns.append({
+                        "name": col['name'],
+                        "type": col['type'],
+                        "nullable": col.get('nullable', True),
+                        "default": col.get('default')
+                    })
+                
+                tables.append({
+                    "name": table_name,
+                    "columns": columns,
+                    "primary_keys": table_info.get('primary_keys', []),
+                    "foreign_keys": table_info.get('foreign_keys', [])
+                })
+        
+        # Handle MongoDB (has 'collections' key)
+        elif 'collections' in schema:
+            for collection_name, collection_info in schema['collections'].items():
+                fields = collection_info.get('fields', {})
+                columns = []
+                for field_name, field_type in fields.items():
+                    columns.append({
+                        "name": field_name,
+                        "type": field_type
+                    })
+                
+                tables.append({
+                    "name": collection_name,
+                    "columns": columns
+                })
+        
+        return {
+            "tables": tables,
+            "relationships": schema.get('relationships', [])
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving schema: {str(e)}")

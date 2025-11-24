@@ -14,7 +14,12 @@ from .kb_service import add_kb
 embedding_model = load_embedding_model()
 qdrant_client = get_qdrant_client()
 
-def process_and_upload_file(file_path: str, collection_name: str = "default_collection", job_id: str = None):
+def process_and_upload_file(
+    file_path: str, 
+    collection_name: str = "default_collection", 
+    job_id: str = None,
+    tenant_id: str = None
+):
     """
     Orchestrates the full data pipeline: Extract -> Clean -> Chunk -> Embed -> Upload.
 
@@ -22,6 +27,7 @@ def process_and_upload_file(file_path: str, collection_name: str = "default_coll
         file_path (str): The path to the raw file.
         collection_name (str): The name of the Qdrant collection to upload to.
         job_id (str, optional): Job ID for progress tracking.
+        tenant_id (str, optional): Tenant ID for multitenancy isolation.
     """
     from .job_service import job_tracker
     
@@ -59,8 +65,8 @@ def process_and_upload_file(file_path: str, collection_name: str = "default_coll
         # Ensure the target collection exists before uploading.
         create_collection_if_not_exists(qdrant_client, collection_name)
         add_kb(collection_name)
-        # Upload the final, processed data to Qdrant.
-        upload_to_qdrant(qdrant_client, collection_name, chunks_with_embeddings)
+        # Upload the final, processed data to Qdrant with tenant context.
+        upload_to_qdrant(qdrant_client, collection_name, chunks_with_embeddings, tenant_id=tenant_id)
         update_progress(f"Step 5/5: Upload to Qdrant complete.")
         update_progress(f"--- Pipeline finished successfully for file: {os.path.basename(file_path)} ---")
 

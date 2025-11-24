@@ -1,8 +1,11 @@
 from qdrant_client import QdrantClient, models
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import uuid
+import logging
 
 from app.config import QDRANT_URL, QDRANT_API_KEY, EMBEDDING_VECTOR_SIZE, DISTANCE_METRIC
+
+logger = logging.getLogger(__name__)
 
 def get_qdrant_client():
     """
@@ -47,10 +50,21 @@ def create_collection_if_not_exists(client: QdrantClient, collection_name: str):
         print(f"Warning: Could not create payload index for 'source_filename'. This may affect delete performance. Error: {e}")
 
 
-def upload_to_qdrant(client: QdrantClient, collection_name: str, chunks: List[Dict[str, Any]]):
+def upload_to_qdrant(
+    client: QdrantClient, 
+    collection_name: str, 
+    chunks: List[Dict[str, Any]],
+    tenant_id: Optional[str] = None
+):
     """
     Uploads a list of processed chunks (with embeddings and metadata) to Qdrant.
-    The payload is stored in a flat structure.
+    The payload is stored in a flat structure with tenant_id for isolation.
+    
+    Args:
+        client: Qdrant client
+        collection_name: Target collection name
+        chunks: List of chunks with embeddings and metadata
+        tenant_id: Tenant identifier (added to metadata for filtering)
     """
     points_to_upload = []
     for chunk in chunks:
@@ -60,6 +74,11 @@ def upload_to_qdrant(client: QdrantClient, collection_name: str, chunks: List[Di
             "text": chunk["text"],
             **chunk["metadata"]
         }
+        
+        # Add tenant_id to payload if provided
+        if tenant_id:
+            payload["tenant_id"] = tenant_id
+        
         vector = chunk["embedding"]
         points_to_upload.append(models.PointStruct(id=point_id, vector=vector, payload=payload))
 
@@ -68,7 +87,7 @@ def upload_to_qdrant(client: QdrantClient, collection_name: str, chunks: List[Di
         points=points_to_upload,
         wait=True
     )
-    print(f"Successfully uploaded {len(points_to_upload)} points to Qdrant collection '{collection_name}'.")
+    logger.info(f"Successfully uploaded {len(points_to_upload)} points to Qdrant collection '{collection_name}'")
 
 # --- Knowledge Base Management Functions ---
 

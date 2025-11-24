@@ -40,3 +40,6 @@ requests
 
 # Security
 cryptography
+python-jose[cryptography]
+passlib[bcrypt]
+hvac  # HashiCorp Vault client
