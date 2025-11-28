@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 from app.models.tenant import Tenant
 
@@ -90,8 +90,8 @@ class QuotaService:
         
         # Check if custom quotas exist in database
         result = self.db.execute(
-            "SELECT * FROM tenant_quotas WHERE tenant_id = ?",
-            (tenant_id,)
+            text("SELECT * FROM tenant_quotas WHERE tenant_id = :tenant_id"),
+            {"tenant_id": tenant_id}
         ).fetchone()
         
         if result:
@@ -134,13 +134,13 @@ class QuotaService:
         
         # Query usage from database
         result = self.db.execute(
-            """
+            text("""
             SELECT query_count, document_count, storage_bytes, 
                    active_db_connections, concurrent_queries, api_calls_count
             FROM tenant_quota_usage
-            WHERE tenant_id = ? AND period_type = ? AND period_start = ?
-            """,
-            (tenant_id, period_type, period_start)
+            WHERE tenant_id = :tenant_id AND period_type = :period_type AND period_start = :period_start
+            """),
+            {"tenant_id": tenant_id, "period_type": period_type, "period_start": period_start}
         ).fetchone()
         
         if result:
@@ -329,16 +329,17 @@ class QuotaService:
         
         # Insert or update usage record
         self.db.execute(
-            f"""
+            text(f"""
             INSERT INTO tenant_quota_usage 
                 (tenant_id, period_type, period_start, period_end, {column}, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (:tenant_id, :period_type, :period_start, :period_end, :amount, :now)
             ON CONFLICT(tenant_id, period_type, period_start) 
             DO UPDATE SET 
-                {column} = {column} + ?,
-                updated_at = ?
-            """,
-            (tenant_id, period_type, period_start, period_end, amount, now, amount, now)
+                {column} = {column} + :amount2,
+                updated_at = :now2
+            """),
+            {"tenant_id": tenant_id, "period_type": period_type, "period_start": period_start, 
+             "period_end": period_end, "amount": amount, "now": now, "amount2": amount, "now2": now}
         )
         self.db.commit()
         
@@ -425,27 +426,28 @@ class QuotaService:
         ]
         
         updates = []
-        values = []
+        params = {"tenant_id": tenant_id, "updated_at": datetime.utcnow()}
+        
         for field, value in quotas.items():
             if field in valid_fields:
-                updates.append(f"{field} = ?")
-                values.append(value)
+                updates.append(f"{field} = :{field}")
+                params[field] = value
         
         if not updates:
             return
         
-        values.append(datetime.utcnow())
-        values.append(tenant_id)
+        # Build placeholders for INSERT
+        field_placeholders = ', '.join([f":{f}" for f in valid_fields])
         
         # Update or insert quotas
         self.db.execute(
-            f"""
+            text(f"""
             INSERT INTO tenant_quotas (tenant_id, {', '.join(valid_fields)}, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (:tenant_id, {field_placeholders}, :updated_at)
             ON CONFLICT(tenant_id) 
-            DO UPDATE SET {', '.join(updates)}, updated_at = ?
-            """,
-            (tenant_id, *[quotas.get(f, 0) for f in valid_fields], datetime.utcnow(), *values)
+            DO UPDATE SET {', '.join(updates)}, updated_at = :updated_at
+            """),
+            {**params, **{f: quotas.get(f, 0) for f in valid_fields}}
         )
         self.db.commit()
         

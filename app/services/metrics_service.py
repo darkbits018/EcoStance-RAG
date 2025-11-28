@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 import statistics
 
 from app.models.tenant import Tenant
@@ -74,7 +74,7 @@ class MetricsService:
         
         # Get usage data from api_usage table
         usage_stats = self.db.execute(
-            """
+            text("""
             SELECT 
                 COUNT(*) as total_calls,
                 SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END) as success_count,
@@ -82,9 +82,9 @@ class MetricsService:
                 AVG(response_time_ms) as avg_response_time,
                 COUNT(DISTINCT endpoint) as unique_endpoints
             FROM api_usage
-            WHERE tenant_id = ? AND timestamp >= ? AND timestamp < ?
-            """,
-            (tenant_id, period_start, period_end)
+            WHERE tenant_id = :tenant_id AND timestamp >= :start AND timestamp < :end
+            """),
+            {"tenant_id": tenant_id, "start": period_start, "end": period_end}
         ).fetchone()
         
         if not usage_stats or usage_stats[0] == 0:
@@ -96,27 +96,35 @@ class MetricsService:
         
         # Insert or update metrics
         self.db.execute(
-            """
+            text("""
             INSERT INTO tenant_metrics 
                 (tenant_id, metric_type, period_start, period_end,
                  api_call_count, api_success_count, api_error_count, avg_response_time_ms,
                  updated_at)
-            VALUES (?, 'hourly', ?, ?, ?, ?, ?, ?, ?)
+            VALUES (:tenant_id, 'hourly', :period_start, :period_end, :call_count, :success_count, :error_count, :avg_time, :updated_at)
             ON CONFLICT(tenant_id, metric_type, period_start)
             DO UPDATE SET
-                api_call_count = ?,
-                api_success_count = ?,
-                api_error_count = ?,
-                avg_response_time_ms = ?,
-                updated_at = ?
-            """,
-            (
-                tenant_id, period_start, period_end,
-                usage_stats[0], usage_stats[1], usage_stats[2], avg_time,
-                datetime.utcnow(),
-                usage_stats[0], usage_stats[1], usage_stats[2], avg_time,
-                datetime.utcnow()
-            )
+                api_call_count = :call_count2,
+                api_success_count = :success_count2,
+                api_error_count = :error_count2,
+                avg_response_time_ms = :avg_time2,
+                updated_at = :updated_at2
+            """),
+            {
+                "tenant_id": tenant_id, 
+                "period_start": period_start, 
+                "period_end": period_end,
+                "call_count": usage_stats[0], 
+                "success_count": usage_stats[1], 
+                "error_count": usage_stats[2], 
+                "avg_time": avg_time,
+                "updated_at": datetime.utcnow(),
+                "call_count2": usage_stats[0], 
+                "success_count2": usage_stats[1], 
+                "error_count2": usage_stats[2], 
+                "avg_time2": avg_time,
+                "updated_at2": datetime.utcnow()
+            }
         )
         self.db.commit()
         

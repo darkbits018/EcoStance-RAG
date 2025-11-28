@@ -142,12 +142,19 @@ async def execute_sql_query(request: ExecuteRequest):
     raise HTTPException(status_code=500, detail="Unexpected response format from database")
 
 @router.post("/db/connections/save")
-async def save_connection(request: SaveConnectionRequest):
+async def save_connection(
+    request: SaveConnectionRequest,
+    current_user: dict = Depends(get_current_user)
+):
     """
-    Save a database connection profile securely.
+    Save a database connection profile securely for the current tenant.
     """
     try:
+        tenant_id = current_user["tenant_id"]
         connection_manager = get_connection_manager()
+        
+        # Prefix connection name with tenant_id for isolation
+        internal_name = f"{tenant_id}_{request.name}"
         
         connection_data = {
             'type': request.db_type,
@@ -156,10 +163,11 @@ async def save_connection(request: SaveConnectionRequest):
             'username': request.username,
             'password': request.password,
             'database': request.database,
-            'db_path': request.db_path
+            'db_path': request.db_path,
+            'tenant_id': tenant_id  # Store tenant_id in connection data
         }
         
-        success = connection_manager.save_connection(request.name, connection_data)
+        success = connection_manager.save_connection(internal_name, connection_data)
         
         if success:
             return {"message": f"Connection '{request.name}' saved successfully"}
@@ -170,26 +178,37 @@ async def save_connection(request: SaveConnectionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/db/connections/list")
-async def list_connections():
+async def list_connections(
+    current_user: dict = Depends(get_current_user)
+):
     """
-    Get list of saved connection profiles.
+    Get list of saved connection profiles for the current tenant.
     """
     try:
+        tenant_id = current_user["tenant_id"]
         connection_manager = get_connection_manager()
-        connections = connection_manager.list_connections()
+        all_connections = connection_manager.list_connections()
         
-        # Get info for each connection (without passwords)
+        # Filter connections by tenant - connections should be prefixed with tenant_id
+        tenant_prefix = f"{tenant_id}_"
+        
+        # Get info for each connection belonging to this tenant (without passwords)
         connection_list = []
-        for name in connections:
-            info = connection_manager.get_connection_info(name)
-            if info:
-                connection_list.append({
-                    'name': name,
-                    'type': info.get('type', 'unknown'),
-                    'host': info.get('host', ''),
-                    'database': info.get('database', ''),
-                    'username': info.get('username', '')
-                })
+        for name in all_connections:
+            # Only include connections that belong to this tenant
+            if name.startswith(tenant_prefix):
+                info = connection_manager.get_connection_info(name)
+                if info:
+                    # Remove tenant prefix from display name
+                    display_name = name[len(tenant_prefix):]
+                    connection_list.append({
+                        'name': display_name,
+                        'internal_name': name,  # Keep full name for internal use
+                        'type': info.get('type', 'unknown'),
+                        'host': info.get('host', ''),
+                        'database': info.get('database', ''),
+                        'username': info.get('username', '')
+                    })
         
         return connection_list
         
@@ -197,17 +216,28 @@ async def list_connections():
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/db/connections/{name}")
-async def load_connection(name: str):
+async def load_connection(
+    name: str,
+    current_user: dict = Depends(get_current_user)
+):
     """
-    Load a saved connection profile (with decrypted password).
+    Load a saved connection profile (with decrypted password) for the current tenant.
     Returns connection data with a ready-to-use db_uri field.
     """
     try:
+        tenant_id = current_user["tenant_id"]
         connection_manager = get_connection_manager()
-        connection_data = connection_manager.load_connection(name)
+        
+        # Prefix connection name with tenant_id for isolation
+        internal_name = f"{tenant_id}_{name}"
+        connection_data = connection_manager.load_connection(internal_name)
         
         if connection_data is None:
             raise HTTPException(status_code=404, detail=f"Connection '{name}' not found")
+        
+        # Verify tenant_id matches (extra security check)
+        if connection_data.get('tenant_id') != tenant_id:
+            raise HTTPException(status_code=403, detail="Access denied to this connection")
         
         # Generate db_uri for easy connection
         db_type = connection_data.get('type')
@@ -247,19 +277,31 @@ async def load_connection(name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/db/connections/{name}")
-async def delete_connection(name: str):
+async def delete_connection(
+    name: str,
+    current_user: dict = Depends(get_current_user)
+):
     """
-    Delete a saved connection profile.
+    Delete a saved connection profile for the current tenant.
     Use '__empty__' as the name to delete connections with empty names.
     """
     try:
+        tenant_id = current_user["tenant_id"]
         connection_manager = get_connection_manager()
         
         # Handle empty name deletion
         if name == "__empty__":
             name = ""
         
-        success = connection_manager.delete_connection(name)
+        # Prefix connection name with tenant_id for isolation
+        internal_name = f"{tenant_id}_{name}" if name else f"{tenant_id}_"
+        
+        # Verify the connection belongs to this tenant before deleting
+        connection_data = connection_manager.get_connection_info(internal_name)
+        if connection_data and connection_data.get('tenant_id') != tenant_id:
+            raise HTTPException(status_code=403, detail="Access denied to this connection")
+        
+        success = connection_manager.delete_connection(internal_name)
         
         if success:
             display_name = "unnamed connection" if name == "" else f"'{name}'"

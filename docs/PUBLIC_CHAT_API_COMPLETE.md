@@ -1,201 +1,496 @@
-# Public Chat API - Implementation Complete
+# Public AI Agent API - Complete Implementation
 
-## Overview
+## ✅ Implementation Status: COMPLETE
 
-The Public Chat API has been successfully implemented according to the specification in `public-chat-api-req.md`. This feature allows tenants to provide a public-facing chat interface powered by their knowledge bases.
+All required endpoints and database tables have been implemented and are ready for use.
 
-## What's Been Implemented
+---
 
-### ✅ Database Layer
-- **Migration**: `migrations/008_create_public_chat_tables.sql`
-- **Models**: `app/models/public_chat.py`
-  - `PublicChatConfig` - Configuration per tenant
-  - `PublicChatSession` - Individual chat sessions
-  - `PublicChatMessage` - Messages in sessions
-  - `PublicChatFeedback` - User feedback
+## 📋 API Endpoints
 
-### ✅ API Layer
-- **Schemas**: `app/schemas/public_chat.py`
-  - Request/response models for all endpoints
-  - Validation rules
-  - Error schemas
+### Public Endpoints (No Authentication Required)
 
-- **Service**: `app/services/public_chat_service.py`
-  - Configuration management
-  - Session management
-  - Message handling
-  - Feedback tracking
-  - Rate limiting
-  - Analytics
+#### 1. Get Public Chat Configuration
+```
+GET /api/v1/public-chat/config
+```
+**Description:** Get the current public chat configuration for rendering the UI.
 
-- **RAG Service**: `app/services/rag_service.py`
-  - Wrapper for querying knowledge bases
-  - Integration with existing RAG system
+**Response:**
+```json
+{
+  "enabled": true,
+  "welcome_message": "Hi! How can I help you today?",
+  "suggested_questions": [
+    "What are your business hours?",
+    "How can I track my order?"
+  ],
+  "branding": {
+    "logo": "https://example.com/logo.png",
+    "primary_color": "#0066CC",
+    "company_name": "QuickShip"
+  },
+  "rate_limit": {
+    "queries_per_minute": 10,
+    "max_messages_per_session": 50
+  },
+  "features": {
+    "show_sources": true,
+    "allow_feedback": true,
+    "show_suggested_questions": true
+  }
+}
+```
 
-- **Router**: `app/routers/public_chat_router.py`
-  - 8 API endpoints (3 public, 5 admin)
+#### 2. Send Chat Message
+```
+POST /api/v1/public-chat/query
+```
+**Description:** Send a query to the public chat and get an AI response.
 
-## API Endpoints
+**Request:**
+```json
+{
+  "session_id": "unique-session-id",
+  "query": "What are your shipping options?",
+  "conversation_history": [
+    {
+      "role": "user",
+      "content": "Hello"
+    },
+    {
+      "role": "assistant",
+      "content": "Hi! How can I help you?"
+    }
+  ]
+}
+```
 
-### Public Endpoints (No Authentication)
+**Response:**
+```json
+{
+  "answer": "We offer standard, express, and overnight shipping...",
+  "sources": [
+    {
+      "filename": "shipping-policy.pdf",
+      "chunk_number": 1,
+      "similarity": 0.95,
+      "preview": "Our shipping options include..."
+    }
+  ],
+  "session_id": "unique-session-id",
+  "timestamp": "2024-11-26T10:30:00Z"
+}
+```
 
-1. **POST /api/v1/public-chat/query**
-   - Send a query and get AI response
-   - Rate limited per session
-   - Returns answer with optional sources
+**Rate Limiting:**
+- Returns 429 if rate limit exceeded
+- Includes `Retry-After` header with seconds to wait
 
-2. **GET /api/v1/public-chat/config**
-   - Get public chat configuration
-   - Used for rendering the UI
-   - Cached for performance
+#### 3. Submit Feedback
+```
+POST /api/v1/public-chat/feedback
+```
+**Description:** Submit feedback for a chat message.
 
-3. **POST /api/v1/public-chat/feedback**
-   - Submit feedback (thumbs up/down)
-   - Optional comment
+**Request:**
+```json
+{
+  "session_id": "unique-session-id",
+  "message_id": "msg-abc123",
+  "feedback_type": "positive",
+  "comment": "Very helpful answer!"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Thank you for your feedback!"
+}
+```
+
+---
 
 ### Admin Endpoints (Authentication Required)
 
-4. **GET /api/v1/admin/public-chat/config**
-   - Get full configuration including sensitive data
-   - Requires admin role
+All admin endpoints require `admin` or `super_admin` role.
 
-5. **PUT /api/v1/admin/public-chat/config**
-   - Update configuration
-   - Validates all fields
-   - Requires admin role
+#### 4. Get Admin Configuration
+```
+GET /api/v1/admin/public-chat/config
+```
+**Description:** Get the full public chat configuration for admin panel.
 
-6. **GET /api/v1/admin/public-chat/available-kbs**
-   - List available knowledge bases
-   - For KB selection in admin panel
-
-7. **GET /api/v1/admin/public-chat/analytics**
-   - Usage statistics and analytics
-   - Configurable date range
-
-8. **GET /api/v1/admin/public-chat/sessions/{session_id}**
-   - Detailed session information
-   - Full conversation history
-
-## Features
-
-### Configuration Options
-- **Enable/Disable**: Toggle public chat on/off
-- **Knowledge Bases**: Select which KBs to use
-- **Welcome Message**: Customize greeting
-- **Suggested Questions**: Up to 10 pre-defined questions
-- **Branding**: Logo, primary color, company name
-- **Rate Limiting**: Queries per minute, max messages per session
-- **Features**: Show sources, allow feedback, show suggestions
-
-### Rate Limiting
-- Configurable queries per minute (default: 10)
-- Configurable max messages per session (default: 50)
-- Session-based tracking
-- Automatic expiry after 24 hours
-
-### Analytics
-- Total sessions and queries
-- Average queries per session
-- Top questions by frequency
-- Feedback summary (positive/negative)
-- Session details with full history
-
-## Installation & Setup
-
-### 1. Apply Database Migration
-
-```bash
-python migrations/apply_public_chat_migration.py
+**Headers:**
+```
+Authorization: Bearer <token>
 ```
 
-This will create the following tables:
-- `public_chat_configs`
-- `public_chat_sessions`
-- `public_chat_messages`
-- `public_chat_feedback`
+**Response:**
+```json
+{
+  "enabled": true,
+  "allowed_kbs": ["kb-1", "kb-2"],
+  "welcome_message": "Hi! How can I help you today?",
+  "suggested_questions": ["Question 1", "Question 2"],
+  "branding": {
+    "logo": "https://example.com/logo.png",
+    "primary_color": "#0066CC",
+    "company_name": "QuickShip"
+  },
+  "rate_limit": {
+    "queries_per_minute": 10,
+    "max_messages_per_session": 50
+  },
+  "features": {
+    "show_sources": true,
+    "allow_feedback": true,
+    "show_suggested_questions": true
+  },
+  "created_at": "2024-11-26T10:00:00Z",
+  "updated_at": "2024-11-26T10:30:00Z",
+  "updated_by": "admin@example.com"
+}
+```
 
-### 2. Start the Server
+#### 5. Update Configuration
+```
+PUT /api/v1/admin/public-chat/config
+```
+**Description:** Update the public chat configuration.
 
-The public chat router is already integrated into `app/main.py`:
+**Headers:**
+```
+Authorization: Bearer <token>
+```
 
+**Request:**
+```json
+{
+  "enabled": true,
+  "allowed_kbs": ["kb-1", "kb-2"],
+  "welcome_message": "Welcome! How can I assist you?",
+  "suggested_questions": [
+    "What are your business hours?",
+    "How can I track my order?"
+  ],
+  "branding": {
+    "logo": "https://example.com/logo.png",
+    "primary_color": "#0066CC",
+    "company_name": "QuickShip"
+  },
+  "rate_limit": {
+    "queries_per_minute": 10,
+    "max_messages_per_session": 50
+  },
+  "features": {
+    "show_sources": true,
+    "allow_feedback": true,
+    "show_suggested_questions": true
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Configuration updated successfully",
+  "config": { /* full config object */ }
+}
+```
+
+#### 6. Get Available Knowledge Bases
+```
+GET /api/v1/admin/public-chat/available-kbs
+```
+**Description:** Get list of knowledge bases that can be selected for public chat.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "knowledge_bases": [
+    {
+      "id": "kb-1",
+      "name": "Product Documentation",
+      "document_count": 150,
+      "is_public": false,
+      "created_at": "2024-11-26T10:00:00Z"
+    },
+    {
+      "id": "kb-2",
+      "name": "FAQ",
+      "document_count": 50,
+      "is_public": false,
+      "created_at": "2024-11-26T10:00:00Z"
+    }
+  ]
+}
+```
+
+#### 7. Get Available Databases
+```
+GET /api/v1/admin/public-chat/available-dbs
+```
+**Description:** Get list of database connections available for the tenant.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "databases": [
+    {
+      "id": "qragent",
+      "name": "Qragent",
+      "type": "postgresql",
+      "database": "qr-agent-db",
+      "host": "buddi-db-buddi.k.aivencloud.com"
+    },
+    {
+      "id": "logistics-demo",
+      "name": "Logistics Demo",
+      "type": "sqlite",
+      "database": "sqlite:///path/to/QuickShip.db",
+      "host": null
+    }
+  ]
+}
+```
+
+#### 8. Get Analytics
+```
+GET /api/v1/admin/public-chat/analytics?days=30
+```
+**Description:** Get usage statistics and analytics for public chat.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `days` (optional): Number of days to analyze (default: 30)
+- `start_date` (optional): ISO format start date
+- `end_date` (optional): ISO format end date
+
+**Response:**
+```json
+{
+  "period": {
+    "start_date": "2024-10-27T00:00:00Z",
+    "end_date": "2024-11-26T00:00:00Z",
+    "days": 30
+  },
+  "summary": {
+    "total_sessions": 150,
+    "total_queries": 450,
+    "unique_visitors": 150,
+    "average_queries_per_session": 3.0,
+    "average_rating": 4.5
+  },
+  "top_questions": [
+    {
+      "question": "What are your shipping options?",
+      "count": 45,
+      "percentage": 10.0
+    }
+  ],
+  "feedback_summary": {
+    "total_feedback": 100,
+    "positive": 85,
+    "negative": 15,
+    "positive_percentage": 85.0
+  },
+  "usage_by_day": [],
+  "rate_limit_hits": {
+    "queries_per_minute": 0,
+    "max_messages_per_session": 0
+  }
+}
+```
+
+#### 9. Get Session Details
+```
+GET /api/v1/admin/public-chat/sessions/{session_id}
+```
+**Description:** Get detailed information about a specific session.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "session_id": "unique-session-id",
+  "started_at": "2024-11-26T10:00:00Z",
+  "ended_at": "2024-11-26T10:30:00Z",
+  "duration_seconds": 1800,
+  "message_count": 10,
+  "messages": [
+    {
+      "id": "msg-abc123",
+      "role": "user",
+      "content": "Hello",
+      "timestamp": "2024-11-26T10:00:00Z",
+      "sources": null,
+      "feedback": null
+    },
+    {
+      "id": "msg-def456",
+      "role": "assistant",
+      "content": "Hi! How can I help you?",
+      "timestamp": "2024-11-26T10:00:05Z",
+      "sources": [],
+      "feedback": "positive"
+    }
+  ],
+  "metadata": {
+    "user_agent": "Mozilla/5.0...",
+    "ip_address": "192.168.1.1",
+    "referrer": "https://example.com"
+  }
+}
+```
+
+---
+
+## 🗄️ Database Tables
+
+All tables have been created via migration `008_create_public_chat_tables.sql`.
+
+### 1. public_chat_configs
+Stores configuration for public chat feature per tenant.
+
+**Columns:**
+- `id` (TEXT, PRIMARY KEY)
+- `tenant_id` (TEXT, FOREIGN KEY → tenants.id)
+- `enabled` (BOOLEAN)
+- `allowed_kbs` (TEXT, JSON array)
+- `welcome_message` (TEXT)
+- `suggested_questions` (TEXT, JSON array)
+- `branding` (TEXT, JSON object)
+- `rate_limit` (TEXT, JSON object)
+- `features` (TEXT, JSON object)
+- `created_at` (TIMESTAMP)
+- `updated_at` (TIMESTAMP)
+- `updated_by` (TEXT)
+
+**Indexes:**
+- `idx_public_chat_configs_tenant` on `tenant_id`
+
+### 2. public_chat_sessions
+Stores individual chat sessions.
+
+**Columns:**
+- `session_id` (TEXT, PRIMARY KEY)
+- `tenant_id` (TEXT, FOREIGN KEY → tenants.id)
+- `started_at` (TIMESTAMP)
+- `ended_at` (TIMESTAMP)
+- `message_count` (INTEGER)
+- `query_count` (INTEGER)
+- `last_activity` (TIMESTAMP)
+- `metadata` (TEXT, JSON object)
+
+**Indexes:**
+- `idx_public_chat_sessions_tenant_started` on `(tenant_id, started_at)`
+- `idx_public_chat_sessions_last_activity` on `last_activity`
+
+### 3. public_chat_messages
+Stores individual messages in chat sessions.
+
+**Columns:**
+- `id` (TEXT, PRIMARY KEY)
+- `session_id` (TEXT, FOREIGN KEY → public_chat_sessions.session_id)
+- `tenant_id` (TEXT, FOREIGN KEY → tenants.id)
+- `role` (TEXT, CHECK: 'user' or 'assistant')
+- `content` (TEXT)
+- `sources` (TEXT, JSON array)
+- `feedback` (TEXT, CHECK: 'positive', 'negative', or NULL)
+- `feedback_comment` (TEXT)
+- `timestamp` (TIMESTAMP)
+
+**Indexes:**
+- `idx_public_chat_messages_session` on `session_id`
+- `idx_public_chat_messages_tenant_timestamp` on `(tenant_id, timestamp)`
+
+### 4. public_chat_feedback
+Stores feedback submitted by users.
+
+**Columns:**
+- `id` (TEXT, PRIMARY KEY)
+- `session_id` (TEXT)
+- `message_id` (TEXT, FOREIGN KEY → public_chat_messages.id)
+- `tenant_id` (TEXT, FOREIGN KEY → tenants.id)
+- `feedback_type` (TEXT, CHECK: 'positive' or 'negative')
+- `comment` (TEXT)
+- `timestamp` (TIMESTAMP)
+
+**Indexes:**
+- `idx_public_chat_feedback_tenant_timestamp` on `(tenant_id, timestamp)`
+- `idx_public_chat_feedback_message` on `message_id`
+
+---
+
+## 📁 Implementation Files
+
+### Models
+- `app/models/public_chat.py` - SQLAlchemy models for all tables
+
+### Schemas
+- `app/schemas/public_chat.py` - Pydantic models for request/response validation
+
+### Services
+- `app/services/public_chat_service.py` - Business logic for public chat functionality
+
+### Routers
+- `app/routers/public_chat_router.py` - API endpoints
+
+### Migrations
+- `migrations/008_create_public_chat_tables.sql` - SQLite migration
+- `migrations/008_create_public_chat_tables_postgres.sql` - PostgreSQL migration
+
+---
+
+## 🚀 Testing the API
+
+### 1. Start the Server
 ```bash
+.venv\Scripts\activate
 python run_app.py
 ```
 
-### 3. Configure Public Chat
+### 2. Test Public Endpoints (No Auth)
 
-Use the admin endpoints to configure:
-
-```bash
-# Get current config
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:8000/api/v1/admin/public-chat/config
-
-# Update config
-curl -X PUT \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "enabled": true,
-    "allowed_kbs": ["kb-1"],
-    "welcome_message": "Hi! How can I help you?",
-    "suggested_questions": ["What services do you offer?"],
-    "branding": {
-      "primary_color": "#0066CC",
-      "company_name": "Your Company"
-    },
-    "rate_limit": {
-      "queries_per_minute": 10,
-      "max_messages_per_session": 50
-    },
-    "features": {
-      "show_sources": true,
-      "allow_feedback": true,
-      "show_suggested_questions": true
-    }
-  }' \
-  http://localhost:8000/api/v1/admin/public-chat/config
-```
-
-## Testing
-
-### Automated Tests
-
-Run the test suite:
-
-```bash
-python test_public_chat.py
-```
-
-This will test:
-- Authentication
-- Getting available KBs
-- Getting/updating admin config
-- Public config endpoint
-- Sending queries
-- Submitting feedback
-- Analytics
-- Session details
-
-### Manual Testing
-
-#### 1. Test Public Config
+**Get Configuration:**
 ```bash
 curl http://localhost:8000/api/v1/public-chat/config
 ```
 
-#### 2. Test Query
+**Send Query:**
 ```bash
 curl -X POST http://localhost:8000/api/v1/public-chat/query \
   -H "Content-Type: application/json" \
   -d '{
     "session_id": "test-session-123",
-    "query": "What services do you offer?",
+    "query": "What are your shipping options?",
     "conversation_history": []
   }'
 ```
 
-#### 3. Test Feedback
+**Submit Feedback:**
 ```bash
 curl -X POST http://localhost:8000/api/v1/public-chat/feedback \
   -H "Content-Type: application/json" \
@@ -207,208 +502,124 @@ curl -X POST http://localhost:8000/api/v1/public-chat/feedback \
   }'
 ```
 
-## API Documentation
+### 3. Test Admin Endpoints (Auth Required)
 
-Once the server is running, visit:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-Look for the "14. Public Chat" and "Public Chat Admin" sections.
-
-## Security Considerations
-
-### Public Endpoints
-- ✅ Rate limiting per session
-- ✅ Input validation and sanitization
-- ✅ No sensitive data in responses
-- ✅ Session expiry (24 hours)
-- ✅ CORS enabled for all origins
-
-### Admin Endpoints
-- ✅ Bearer token authentication
-- ✅ Role-based access control (admin only)
-- ✅ Audit logging (updated_by field)
-- ✅ Input validation
-- ✅ KB ownership verification
-
-## Performance Optimizations
-
-### Caching
-- Public config should be cached (5 minutes)
-- Available KBs list cached (10 minutes)
-- Analytics cached (1 hour)
-
-### Database
-- Indexes on tenant_id, session_id, timestamp
-- Consider partitioning messages table by month
-- Archive old sessions (>90 days)
-
-### Query Optimization
-- Connection pooling
-- Batch operations where possible
-- Limit conversation history to last 5 messages
-
-## Integration with Frontend
-
-The frontend can now:
-
-1. **Fetch Configuration**
-   ```javascript
-   const config = await fetch('/api/v1/public-chat/config').then(r => r.json());
-   ```
-
-2. **Send Queries**
-   ```javascript
-   const response = await fetch('/api/v1/public-chat/query', {
-     method: 'POST',
-     headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({
-       session_id: sessionId,
-       query: userMessage,
-       conversation_history: history
-     })
-   }).then(r => r.json());
-   ```
-
-3. **Submit Feedback**
-   ```javascript
-   await fetch('/api/v1/public-chat/feedback', {
-     method: 'POST',
-     headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({
-       session_id: sessionId,
-       message_id: messageId,
-       feedback_type: 'positive'
-     })
-   });
-   ```
-
-## Admin Panel Integration
-
-The admin panel can:
-
-1. **Get Available KBs**
-   ```javascript
-   const kbs = await fetch('/api/v1/admin/public-chat/available-kbs', {
-     headers: { 'Authorization': `Bearer ${token}` }
-   }).then(r => r.json());
-   ```
-
-2. **Update Configuration**
-   ```javascript
-   await fetch('/api/v1/admin/public-chat/config', {
-     method: 'PUT',
-     headers: {
-       'Authorization': `Bearer ${token}`,
-       'Content-Type': 'application/json'
-     },
-     body: JSON.stringify(config)
-   });
-   ```
-
-3. **View Analytics**
-   ```javascript
-   const analytics = await fetch('/api/v1/admin/public-chat/analytics?days=30', {
-     headers: { 'Authorization': `Bearer ${token}` }
-   }).then(r => r.json());
-   ```
-
-## File Structure
-
-```
-app/
-├── models/
-│   └── public_chat.py          # Database models
-├── schemas/
-│   └── public_chat.py          # Pydantic schemas
-├── services/
-│   ├── public_chat_service.py  # Business logic
-│   └── rag_service.py          # RAG integration
-└── routers/
-    └── public_chat_router.py   # API endpoints
-
-migrations/
-├── 008_create_public_chat_tables.sql
-└── apply_public_chat_migration.py
-
-test_public_chat.py             # Test suite
-PUBLIC_CHAT_API_COMPLETE.md     # This file
+First, get an auth token:
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@example.com",
+    "password": "your-password"
+  }'
 ```
 
-## Next Steps
+Then use the token for admin endpoints:
+```bash
+# Get admin config
+curl http://localhost:8000/api/v1/admin/public-chat/config \
+  -H "Authorization: Bearer YOUR_TOKEN"
 
-### Backend
-- [ ] Implement caching for public config
-- [ ] Add IP-based rate limiting
-- [ ] Implement session cleanup job
-- [ ] Add more detailed analytics
-- [ ] Implement usage by day tracking
-- [ ] Add rate limit hit tracking
+# Get available KBs
+curl http://localhost:8000/api/v1/admin/public-chat/available-kbs \
+  -H "Authorization: Bearer YOUR_TOKEN"
 
-### Frontend
-- [ ] Connect public chat UI to API
-- [ ] Connect admin panel to API
-- [ ] Add error handling
-- [ ] Add loading states
-- [ ] Test rate limiting behavior
-- [ ] Add real-time updates (optional)
+# Get available databases
+curl http://localhost:8000/api/v1/admin/public-chat/available-dbs \
+  -H "Authorization: Bearer YOUR_TOKEN"
 
-### Testing
-- [ ] Write unit tests for service layer
-- [ ] Write integration tests
-- [ ] Load testing for rate limits
-- [ ] Security testing
+# Get analytics
+curl http://localhost:8000/api/v1/admin/public-chat/analytics?days=30 \
+  -H "Authorization: Bearer YOUR_TOKEN"
 
-### Documentation
-- [ ] Add API examples to Swagger
-- [ ] Create user guide
-- [ ] Create admin guide
-- [ ] Add troubleshooting section
-
-## Troubleshooting
-
-### Public Chat Disabled
-If you get "Public chat is currently disabled":
-1. Check if config exists: `GET /api/v1/admin/public-chat/config`
-2. Enable it: `PUT /api/v1/admin/public-chat/config` with `enabled: true`
-3. Ensure at least one KB is in `allowed_kbs`
-
-### Rate Limit Exceeded
-If you get 429 errors:
-1. Wait 60 seconds before retrying
-2. Check rate limit settings in config
-3. Consider increasing limits for your use case
-
-### No Knowledge Bases
-If you get "No knowledge bases configured":
-1. Create a knowledge base first
-2. Add it to `allowed_kbs` in config
-3. Ensure KB has documents uploaded
-
-### Authentication Errors
-For admin endpoints:
-1. Ensure you have a valid token
-2. Check token hasn't expired
-3. Verify user has admin role
-
-## Summary
-
-✅ **8 API endpoints** implemented (3 public, 5 admin)
-✅ **4 database tables** created with proper indexes
-✅ **Complete service layer** with business logic
-✅ **Rate limiting** and session management
-✅ **Analytics** and reporting
-✅ **Full validation** and error handling
-✅ **Security** measures in place
-✅ **Test suite** provided
-✅ **Documentation** complete
-
-The Public Chat API is ready for integration with the frontend!
+# Update config
+curl -X PUT http://localhost:8000/api/v1/admin/public-chat/config \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "allowed_kbs": ["kb-1"],
+    "welcome_message": "Welcome!",
+    "suggested_questions": ["Question 1"],
+    "branding": {
+      "primary_color": "#0066CC",
+      "company_name": "QuickShip"
+    },
+    "rate_limit": {
+      "queries_per_minute": 10,
+      "max_messages_per_session": 50
+    },
+    "features": {
+      "show_sources": true,
+      "allow_feedback": true,
+      "show_suggested_questions": true
+    }
+  }'
+```
 
 ---
 
-**Status**: ✅ COMPLETE  
-**Date**: November 24, 2024  
-**Total Implementation Time**: ~2 hours  
-**Files Created**: 8  
-**Lines of Code**: ~2000
+## 🔒 Security Features
+
+1. **Rate Limiting**: Configurable per-session and per-minute limits
+2. **Session Expiry**: Sessions expire after 24 hours of inactivity
+3. **Tenant Isolation**: All data is isolated by tenant_id
+4. **Admin Authentication**: Admin endpoints require valid JWT token
+5. **Role-Based Access**: Only admin/super_admin can access admin endpoints
+
+---
+
+## 📊 Features
+
+1. **Configuration Management**: Full control over chat behavior and appearance
+2. **Session Tracking**: Track user sessions and conversation history
+3. **Message Storage**: Store all messages with timestamps and metadata
+4. **Feedback Collection**: Collect positive/negative feedback with comments
+5. **Analytics**: Comprehensive usage statistics and insights
+6. **Knowledge Base Selection**: Choose which KBs to use for responses
+7. **Database Integration**: Access to configured database connections
+8. **Rate Limiting**: Prevent abuse with configurable limits
+9. **Branding**: Customize colors, logo, and company name
+10. **Suggested Questions**: Guide users with pre-configured questions
+
+---
+
+## ✅ Next Steps for Frontend
+
+Your React frontend should implement:
+
+1. **Public Chat Widget**:
+   - Fetch config from `/api/v1/public-chat/config`
+   - Display welcome message and suggested questions
+   - Send queries to `/api/v1/public-chat/query`
+   - Show sources if `features.show_sources` is true
+   - Allow feedback if `features.allow_feedback` is true
+   - Generate unique session IDs (use UUID)
+   - Handle rate limiting (429 responses)
+
+2. **Admin Settings Page**:
+   - Fetch config from `/api/v1/admin/public-chat/config`
+   - Update config via `/api/v1/admin/public-chat/config`
+   - List available KBs from `/api/v1/admin/public-chat/available-kbs`
+   - List available DBs from `/api/v1/admin/public-chat/available-dbs`
+   - Show analytics from `/api/v1/admin/public-chat/analytics`
+   - View session details from `/api/v1/admin/public-chat/sessions/{id}`
+
+---
+
+## 📝 Notes
+
+- All endpoints are registered in `app/main.py`
+- Database tables are created automatically on first run
+- Default configuration is created for each tenant
+- Public chat is disabled by default (must be enabled via admin)
+- Session IDs should be generated client-side (use UUID v4)
+- Tenant ID is extracted from `X-Tenant-ID` header or defaults to CertifyDigital tenant
+
+---
+
+## 🎉 Summary
+
+**All required endpoints and database tables are implemented and ready to use!**
+
+The backend is complete and waiting for your React frontend to integrate with it.

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 
-from .routers import upload, qdrant_upload, query_router, management_router, db_router, auth_router, file_router, tenant_router, admin_router, api_key_router, usage_router, quota_router, metrics_router, public_chat_router
+from .routers import upload, qdrant_upload, query_router, management_router, db_router, auth_router, file_router, tenant_router, admin_router, api_key_router, usage_router, quota_router, metrics_router, public_chat_router, public_agent_router
 from .services.cleanup_service import cleanup_service
 from .services.scheduler_service import start_scheduler, stop_scheduler
 from .middleware.auth_middleware import AuthMiddleware
@@ -15,9 +15,16 @@ from .middleware.usage_tracking_middleware import UsageTrackingMiddleware
 from quickship_agent.router import router as agent_router
 
 # Configure logging
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+file_handler = logging.FileHandler('errorlog.txt', mode='a')
+file_handler.setLevel(logging.ERROR)  # Only log ERROR and above to file
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[console_handler, file_handler]
 )
 
 @asynccontextmanager
@@ -75,6 +82,7 @@ app.include_router(file_router.router, prefix="/api/v1", tags=["11. File Managem
 app.include_router(admin_router.router, tags=["12. Admin"])
 app.include_router(agent_router, prefix="/api/v1/beta", tags=["13. AI Agent (Beta)"])
 app.include_router(public_chat_router.router, tags=["14. Public Chat"])
+app.include_router(public_agent_router.router, tags=["15. Public Agent"])
 
 
 @app.get("/")

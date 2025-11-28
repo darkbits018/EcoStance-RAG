@@ -1,32 +1,32 @@
 """
-Public Chat Service - Business logic for public chat functionality.
+Public Agent Service - Business logic for public agent functionality.
 """
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func, and_
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 import json
 import uuid
 import logging
 
-from ..models.public_chat import (
-    PublicChatConfig,
-    PublicChatSession,
-    PublicChatMessage,
-    PublicChatFeedback
+from ..models.public_agent import (
+    PublicAgentConfig,
+    PublicAgentSession,
+    PublicAgentMessage,
+    PublicAgentFeedback
 )
 from ..models.tenant_knowledge_base import TenantKnowledgeBase
-from ..schemas.public_chat import (
-    PublicChatQueryRequest,
-    AdminPublicChatConfigUpdate,
+from ..schemas.public_agent import (
+    PublicAgentChatRequest,
+    AdminPublicAgentConfigUpdate,
     ConversationMessage
 )
 
 logger = logging.getLogger(__name__)
 
 
-class PublicChatService:
-    """Service for managing public chat functionality."""
+class PublicAgentService:
+    """Service for managing public agent functionality."""
 
     def __init__(self, db: Session):
         self.db = db
@@ -35,20 +35,21 @@ class PublicChatService:
     # Configuration Management
     # ========================================================================
 
-    def get_config(self, tenant_id: str) -> Optional[PublicChatConfig]:
-        """Get public chat configuration for tenant."""
-        return self.db.query(PublicChatConfig).filter(
-            PublicChatConfig.tenant_id == tenant_id
+    def get_config(self, tenant_id: str) -> Optional[PublicAgentConfig]:
+        """Get public agent configuration for tenant."""
+        return self.db.query(PublicAgentConfig).filter(
+            PublicAgentConfig.tenant_id == tenant_id
         ).first()
 
-    def get_or_create_config(self, tenant_id: str, tenant_name: str) -> PublicChatConfig:
+    def get_or_create_config(self, tenant_id: str, tenant_name: str) -> PublicAgentConfig:
         """Get or create default configuration."""
         config = self.get_config(tenant_id)
         if not config:
-            config = PublicChatConfig(
+            config = PublicAgentConfig(
                 tenant_id=tenant_id,
                 enabled=False,
                 allowed_kbs="[]",
+                allowed_dbs="[]",
                 welcome_message="Hi! How can I help you today?",
                 suggested_questions="[]",
                 branding=json.dumps({
@@ -62,7 +63,9 @@ class PublicChatService:
                 features=json.dumps({
                     "show_sources": True,
                     "allow_feedback": True,
-                    "show_suggested_questions": True
+                    "show_suggested_questions": True,
+                    "enable_database_tools": True,
+                    "enable_knowledge_base": True
                 })
             )
             self.db.add(config)
@@ -73,22 +76,24 @@ class PublicChatService:
     def update_config(
         self,
         tenant_id: str,
-        update_data: AdminPublicChatConfigUpdate,
+        update_data: AdminPublicAgentConfigUpdate,
         updated_by: str
-    ) -> PublicChatConfig:
-        """Update public chat configuration."""
+    ) -> PublicAgentConfig:
+        """Update public agent configuration."""
         config = self.get_config(tenant_id)
         if not config:
             raise ValueError("Configuration not found")
 
-        # Skip validation for now - just accept whatever KBs are sent
-        # The frontend should only send valid KBs anyway
-        if update_data.allowed_kbs:
-            logger.info(f"Updating allowed KBs for tenant {tenant_id}: {update_data.allowed_kbs}")
+        logger.info(f"Updating public agent config for tenant {tenant_id}")
+        logger.info(f"Allowed KBs: {update_data.allowed_kbs}")
+        logger.info(f"Allowed DBs: {update_data.allowed_dbs}")
+        logger.info(f"Allowed Tools: {update_data.allowed_tools}")
 
         # Update fields
         config.enabled = update_data.enabled
         config.allowed_kbs = json.dumps(update_data.allowed_kbs)
+        config.allowed_dbs = json.dumps(update_data.allowed_dbs)
+        config.allowed_tools = json.dumps(update_data.allowed_tools)
         config.welcome_message = update_data.welcome_message
         config.suggested_questions = json.dumps(update_data.suggested_questions)
         config.branding = json.dumps(update_data.branding.dict())
@@ -110,14 +115,14 @@ class PublicChatService:
         session_id: str,
         tenant_id: str,
         metadata: Optional[Dict] = None
-    ) -> PublicChatSession:
-        """Get or create a chat session."""
-        session = self.db.query(PublicChatSession).filter(
-            PublicChatSession.session_id == session_id
+    ) -> PublicAgentSession:
+        """Get or create an agent session."""
+        session = self.db.query(PublicAgentSession).filter(
+            PublicAgentSession.session_id == session_id
         ).first()
 
         if not session:
-            session = PublicChatSession(
+            session = PublicAgentSession(
                 session_id=session_id,
                 tenant_id=tenant_id,
                 session_metadata=json.dumps(metadata or {})
@@ -134,8 +139,8 @@ class PublicChatService:
 
     def update_session_activity(self, session_id: str, is_query: bool = False):
         """Update session activity timestamp and counters."""
-        session = self.db.query(PublicChatSession).filter(
-            PublicChatSession.session_id == session_id
+        session = self.db.query(PublicAgentSession).filter(
+            PublicAgentSession.session_id == session_id
         ).first()
 
         if session:
@@ -145,10 +150,10 @@ class PublicChatService:
                 session.query_count += 1
             self.db.commit()
 
-    def get_session(self, session_id: str) -> Optional[PublicChatSession]:
+    def get_session(self, session_id: str) -> Optional[PublicAgentSession]:
         """Get session by ID."""
-        return self.db.query(PublicChatSession).filter(
-            PublicChatSession.session_id == session_id
+        return self.db.query(PublicAgentSession).filter(
+            PublicAgentSession.session_id == session_id
         ).first()
 
     def is_session_expired(self, session_id: str, hours: int = 24) -> bool:
@@ -170,27 +175,29 @@ class PublicChatService:
         tenant_id: str,
         role: str,
         content: str,
-        sources: Optional[List[Dict]] = None
-    ) -> PublicChatMessage:
+        sources: Optional[List[Dict]] = None,
+        tool_used: Optional[str] = None
+    ) -> PublicAgentMessage:
         """Add a message to the session."""
-        message = PublicChatMessage(
+        message = PublicAgentMessage(
             id=f"msg-{uuid.uuid4().hex[:16]}",
             session_id=session_id,
             tenant_id=tenant_id,
             role=role,
             content=content,
-            sources=json.dumps(sources) if sources else None
+            sources=json.dumps(sources) if sources else None,
+            tool_used=tool_used
         )
         self.db.add(message)
         self.db.commit()
         self.db.refresh(message)
         return message
 
-    def get_session_messages(self, session_id: str) -> List[PublicChatMessage]:
+    def get_session_messages(self, session_id: str) -> List[PublicAgentMessage]:
         """Get all messages for a session."""
-        return self.db.query(PublicChatMessage).filter(
-            PublicChatMessage.session_id == session_id
-        ).order_by(PublicChatMessage.timestamp).all()
+        return self.db.query(PublicAgentMessage).filter(
+            PublicAgentMessage.session_id == session_id
+        ).order_by(PublicAgentMessage.timestamp).all()
 
     def update_message_feedback(
         self,
@@ -199,8 +206,8 @@ class PublicChatService:
         comment: Optional[str] = None
     ):
         """Update message feedback."""
-        message = self.db.query(PublicChatMessage).filter(
-            PublicChatMessage.id == message_id
+        message = self.db.query(PublicAgentMessage).filter(
+            PublicAgentMessage.id == message_id
         ).first()
 
         if message:
@@ -219,9 +226,9 @@ class PublicChatService:
         tenant_id: str,
         feedback_type: str,
         comment: Optional[str] = None
-    ) -> PublicChatFeedback:
+    ) -> PublicAgentFeedback:
         """Add feedback for a message."""
-        feedback = PublicChatFeedback(
+        feedback = PublicAgentFeedback(
             session_id=session_id,
             message_id=message_id,
             tenant_id=tenant_id,
@@ -244,7 +251,7 @@ class PublicChatService:
     def check_rate_limit(
         self,
         session_id: str,
-        config: PublicChatConfig
+        config: PublicAgentConfig
     ) -> Tuple[bool, Optional[str]]:
         """Check if session has exceeded rate limits."""
         rate_limit = json.loads(config.rate_limit) if isinstance(config.rate_limit, str) else config.rate_limit
@@ -259,11 +266,11 @@ class PublicChatService:
 
         # Check queries per minute
         one_minute_ago = datetime.utcnow() - timedelta(minutes=1)
-        recent_queries = self.db.query(func.count(PublicChatMessage.id)).filter(
+        recent_queries = self.db.query(func.count(PublicAgentMessage.id)).filter(
             and_(
-                PublicChatMessage.session_id == session_id,
-                PublicChatMessage.role == "user",
-                PublicChatMessage.timestamp >= one_minute_ago
+                PublicAgentMessage.session_id == session_id,
+                PublicAgentMessage.role == "user",
+                PublicAgentMessage.timestamp >= one_minute_ago
             )
         ).scalar()
 
@@ -287,7 +294,7 @@ class PublicChatService:
                 "id": kb.kb_id,
                 "name": kb.name,
                 "document_count": kb.document_count or 0,
-                "is_public": False,  # Can be extended later
+                "is_public": False,
                 "created_at": kb.created_at.isoformat() if kb.created_at else None
             }
             for kb in kbs
@@ -303,37 +310,56 @@ class PublicChatService:
         start_date: datetime,
         end_date: datetime
     ) -> Dict:
-        """Get analytics for public chat."""
+        """Get analytics for public agent."""
         # Total sessions
-        total_sessions = self.db.query(func.count(PublicChatSession.session_id)).filter(
+        total_sessions = self.db.query(func.count(PublicAgentSession.session_id)).filter(
             and_(
-                PublicChatSession.tenant_id == tenant_id,
-                PublicChatSession.started_at >= start_date,
-                PublicChatSession.started_at <= end_date
+                PublicAgentSession.tenant_id == tenant_id,
+                PublicAgentSession.started_at >= start_date,
+                PublicAgentSession.started_at <= end_date
             )
         ).scalar() or 0
 
         # Total queries (user messages)
-        total_queries = self.db.query(func.count(PublicChatMessage.id)).filter(
+        total_queries = self.db.query(func.count(PublicAgentMessage.id)).filter(
             and_(
-                PublicChatMessage.tenant_id == tenant_id,
-                PublicChatMessage.role == "user",
-                PublicChatMessage.timestamp >= start_date,
-                PublicChatMessage.timestamp <= end_date
+                PublicAgentMessage.tenant_id == tenant_id,
+                PublicAgentMessage.role == "user",
+                PublicAgentMessage.timestamp >= start_date,
+                PublicAgentMessage.timestamp <= end_date
+            )
+        ).scalar() or 0
+
+        # Database vs KB queries
+        db_queries = self.db.query(func.count(PublicAgentMessage.id)).filter(
+            and_(
+                PublicAgentMessage.tenant_id == tenant_id,
+                PublicAgentMessage.tool_used == "database",
+                PublicAgentMessage.timestamp >= start_date,
+                PublicAgentMessage.timestamp <= end_date
+            )
+        ).scalar() or 0
+
+        kb_queries = self.db.query(func.count(PublicAgentMessage.id)).filter(
+            and_(
+                PublicAgentMessage.tenant_id == tenant_id,
+                PublicAgentMessage.tool_used == "knowledge_base",
+                PublicAgentMessage.timestamp >= start_date,
+                PublicAgentMessage.timestamp <= end_date
             )
         ).scalar() or 0
 
         # Feedback summary
         feedback_stats = self.db.query(
-            PublicChatFeedback.feedback_type,
-            func.count(PublicChatFeedback.id)
+            PublicAgentFeedback.feedback_type,
+            func.count(PublicAgentFeedback.id)
         ).filter(
             and_(
-                PublicChatFeedback.tenant_id == tenant_id,
-                PublicChatFeedback.timestamp >= start_date,
-                PublicChatFeedback.timestamp <= end_date
+                PublicAgentFeedback.tenant_id == tenant_id,
+                PublicAgentFeedback.timestamp >= start_date,
+                PublicAgentFeedback.timestamp <= end_date
             )
-        ).group_by(PublicChatFeedback.feedback_type).all()
+        ).group_by(PublicAgentFeedback.feedback_type).all()
 
         positive_feedback = 0
         negative_feedback = 0
@@ -349,24 +375,24 @@ class PublicChatService:
         # Average queries per session
         avg_queries = (total_queries / total_sessions) if total_sessions > 0 else 0
 
-        # Top questions (simplified - just get most common user messages)
+        # Top questions
         top_questions_raw = self.db.query(
-            PublicChatMessage.content,
-            func.count(PublicChatMessage.id).label('count')
+            PublicAgentMessage.content,
+            func.count(PublicAgentMessage.id).label('count')
         ).filter(
             and_(
-                PublicChatMessage.tenant_id == tenant_id,
-                PublicChatMessage.role == "user",
-                PublicChatMessage.timestamp >= start_date,
-                PublicChatMessage.timestamp <= end_date
+                PublicAgentMessage.tenant_id == tenant_id,
+                PublicAgentMessage.role == "user",
+                PublicAgentMessage.timestamp >= start_date,
+                PublicAgentMessage.timestamp <= end_date
             )
-        ).group_by(PublicChatMessage.content).order_by(
-            func.count(PublicChatMessage.id).desc()
+        ).group_by(PublicAgentMessage.content).order_by(
+            func.count(PublicAgentMessage.id).desc()
         ).limit(10).all()
 
         top_questions = [
             {
-                "question": q.content[:100],  # Truncate long questions
+                "question": q.content[:100],
                 "count": q.count,
                 "percentage": (q.count / total_queries * 100) if total_queries > 0 else 0
             }
@@ -376,9 +402,11 @@ class PublicChatService:
         return {
             "total_sessions": total_sessions,
             "total_queries": total_queries,
-            "unique_visitors": total_sessions,  # Simplified
+            "unique_visitors": total_sessions,
             "average_queries_per_session": round(avg_queries, 2),
-            "average_rating": round(positive_percentage / 20, 2) if total_feedback > 0 else None,  # Convert to 5-star scale
+            "average_rating": round(positive_percentage / 20, 2) if total_feedback > 0 else None,
+            "database_queries": db_queries,
+            "knowledge_base_queries": kb_queries,
             "top_questions": top_questions,
             "feedback_summary": {
                 "total_feedback": total_feedback,
@@ -390,10 +418,10 @@ class PublicChatService:
 
     def get_session_details(self, session_id: str, tenant_id: str) -> Optional[Dict]:
         """Get detailed information about a session."""
-        session = self.db.query(PublicChatSession).filter(
+        session = self.db.query(PublicAgentSession).filter(
             and_(
-                PublicChatSession.session_id == session_id,
-                PublicChatSession.tenant_id == tenant_id
+                PublicAgentSession.session_id == session_id,
+                PublicAgentSession.tenant_id == tenant_id
             )
         ).first()
 

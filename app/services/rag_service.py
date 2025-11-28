@@ -6,7 +6,9 @@ from typing import List, Dict, Optional
 import logging
 
 from ..models.tenant_knowledge_base import TenantKnowledgeBase
-from quickship_agent.services.rag_service import execute_query, get_retriever, format_docs
+from ..services.query_service import execute_query, get_retriever, format_docs
+from ..services.qdrant_service import get_qdrant_client
+from ..services.tenant_service import get_tenant_service
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,7 @@ class RAGService:
         
         Args:
             tenant_id: Tenant ID
-            kb_id: Knowledge base ID
+            kb_id: Knowledge base ID (kb_name)
             query: User query
             top_k: Number of top results to return
             chat_history: Optional conversation history
@@ -48,14 +50,23 @@ class RAGService:
             if not kb:
                 raise ValueError(f"Knowledge base {kb_id} not found for tenant {tenant_id}")
 
-            # Get collection name (assuming it's stored in kb_id or similar)
-            collection_name = kb.kb_id
+            # Generate tenant-specific collection name
+            qdrant_client = get_qdrant_client()
+            tenant_service = get_tenant_service(qdrant_client)
+            collection_name = tenant_service.get_collection_name(tenant_id, kb.name)
+            
+            logger.info(f"Querying collection: {collection_name} for tenant: {tenant_id}, kb: {kb.name}")
+
+            # Verify collection exists
+            if not tenant_service.collection_exists(collection_name):
+                raise ValueError(f"Collection {collection_name} not found in Qdrant")
 
             # Execute RAG query
             answer = execute_query(
                 collection_name=collection_name,
                 query=query,
-                chat_history=chat_history or []
+                chat_history=chat_history or [],
+                tenant_id=tenant_id
             )
 
             # Get source documents

@@ -1,7 +1,7 @@
 """
-Public Chat Router - API endpoints for public chat functionality.
+Public Agent Router - API endpoints for public agent functionality.
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timedelta
@@ -9,24 +9,25 @@ import logging
 import json
 
 from ..db.database import get_db
-from ..services.public_chat_service import PublicChatService
-from ..services.rag_service import RAGService
+from ..services.public_agent_service import PublicAgentService
 from ..auth.dependencies import get_current_user, require_admin
 from ..models.tenant_user import TenantUser
-from ..schemas.public_chat import (
-    PublicChatQueryRequest,
-    PublicChatQueryResponse,
-    PublicChatConfigResponse,
-    PublicChatConfigDisabledResponse,
-    PublicChatFeedbackRequest,
-    PublicChatFeedbackResponse,
-    AdminPublicChatConfigResponse,
-    AdminPublicChatConfigUpdate,
-    AdminPublicChatConfigUpdateResponse,
+from ..schemas.public_agent import (
+    PublicAgentChatRequest,
+    PublicAgentChatResponse,
+    PublicAgentConfigResponse,
+    PublicAgentConfigDisabledResponse,
+    PublicAgentFeedbackRequest,
+    PublicAgentFeedbackResponse,
+    AdminPublicAgentConfigResponse,
+    AdminPublicAgentConfigUpdate,
+    AdminPublicAgentConfigUpdateResponse,
     AvailableKnowledgeBasesResponse,
-    PublicChatAnalyticsResponse,
+    AvailableDatabasesResponse,
+    AvailableDatabase,
+    PublicAgentAnalyticsResponse,
     SessionDetailsResponse,
-    PublicChatError,
+    PublicAgentError,
     RateLimitError,
     SourceInfo,
     BrandingConfig,
@@ -51,7 +52,6 @@ def get_tenant_id_from_request(request: Request) -> str:
         return tenant_id
     
     # For now, use CertifyDigital tenant as default
-    # In production, this should extract from subdomain
     return "badcd123-6cc6-4011-b01b-d33d1153f10d"
 
 
@@ -65,39 +65,40 @@ def get_client_metadata(request: Request) -> dict:
 
 
 # ============================================================================
-# Public Chat Endpoints (No Authentication Required)
+# Public Agent Endpoints (No Authentication Required)
 # ============================================================================
 
 @router.post(
-    "/api/v1/public-chat/query",
-    response_model=PublicChatQueryResponse,
+    "/api/v1/public-agent/chat",
+    response_model=PublicAgentChatResponse,
     responses={
         429: {"model": RateLimitError},
-        503: {"model": PublicChatError}
+        503: {"model": PublicAgentError}
     },
-    tags=["Public Chat"]
+    tags=["Public Agent"]
 )
-async def query_public_chat(
-    request_data: PublicChatQueryRequest,
+async def chat_with_public_agent(
+    request_data: PublicAgentChatRequest,
     request: Request,
     db: Session = Depends(get_db)
 ):
     """
-    Send a query to the public chat and get an AI response.
+    Send a message to the public agent and get an AI response.
     
+    The agent can query databases and search knowledge bases based on the question.
     This endpoint is public and does not require authentication.
     Rate limiting is applied per session.
     """
     try:
         tenant_id = get_tenant_id_from_request(request)
-        service = PublicChatService(db)
+        service = PublicAgentService(db)
         
         # Get configuration
         config = service.get_config(tenant_id)
         if not config or not config.enabled:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Public chat is currently disabled."
+                detail="Public agent is currently disabled."
             )
         
         # Check rate limits
@@ -129,80 +130,66 @@ async def query_public_chat(
             session_id=request_data.session_id,
             tenant_id=tenant_id,
             role="user",
-            content=request_data.query
+            content=request_data.message
         )
         
-        # Get allowed KBs
+        # Get allowed KBs, DBs, and tools
         allowed_kbs = json.loads(config.allowed_kbs) if isinstance(config.allowed_kbs, str) else config.allowed_kbs
-        if not allowed_kbs:
+        allowed_dbs = json.loads(config.allowed_dbs) if isinstance(config.allowed_dbs, str) else config.allowed_dbs
+        allowed_tools = json.loads(config.allowed_tools) if isinstance(config.allowed_tools, str) else config.allowed_tools
+        features = json.loads(config.features) if isinstance(config.features, str) else config.features
+        
+        # Check if at least one tool is enabled
+        if not features.get("enable_database_tools") and not features.get("enable_knowledge_base"):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="No knowledge bases configured for public chat"
+                detail="No tools are enabled for the public agent"
             )
         
-        # Use the same logic as /api/v1/query/ endpoint
-        from ..services.query_service import execute_query
-        from ..services.qdrant_service import get_qdrant_client
-        from ..services.tenant_service import get_tenant_service
-        from langchain_core.messages import HumanMessage, AIMessage
-        from ..models.tenant_knowledge_base import TenantKnowledgeBase
+        # Use the agent service to process the message
+        from quickship_agent.public_agent_service import PublicAgentService as AgentServiceClass
         
-        # Get the first allowed KB - it might be a collection name or kb_name
-        first_kb = allowed_kbs[0]
+        agent = AgentServiceClass(tenant_id=tenant_id, allowed_tools=allowed_tools)
         
-        # Check if it's a full collection name or just a kb_name
-        if first_kb.startswith("tenant_"):
-            # It's a full collection name, use it directly
-            collection_name = first_kb
-            # Extract kb_name from collection for logging
-            kb_name = first_kb.split("_", 2)[-1] if "_" in first_kb else first_kb
-        else:
-            # It's a kb_name, generate the collection name
-            kb_name = first_kb
-            qdrant_client = get_qdrant_client()
-            tenant_service = get_tenant_service(qdrant_client)
-            collection_name = tenant_service.get_collection_name(tenant_id, kb_name)
+        # Determine which KB to use (first allowed KB)
+        kb_name = allowed_kbs[0] if allowed_kbs and features.get("enable_knowledge_base") else None
         
-        # Verify collection exists
-        qdrant_client = get_qdrant_client()
-        tenant_service = get_tenant_service(qdrant_client)
-        if not tenant_service.collection_exists(collection_name):
-            raise HTTPException(
-                status_code=404,
-                detail=f"Knowledge base '{kb_name}' not found"
-            )
+        # Determine which DB to use (first allowed DB)
+        db_connection = allowed_dbs[0] if allowed_dbs and features.get("enable_database_tools") else None
         
-        logger.info(f"Public chat query for tenant {tenant_id}, kb: {kb_name}, collection: {collection_name}")
-        logger.info(f"Query: {request_data.query}")
+        logger.info(f"Public agent chat for tenant {tenant_id}")
+        logger.info(f"Message: {request_data.message}")
+        logger.info(f"KB: {kb_name}, DB: {db_connection}")
+        logger.info(f"Allowed tools: {allowed_tools}")
         
-        # Convert conversation history to LangChain format
-        processed_chat_history = []
-        if request_data.conversation_history:
-            for msg in request_data.conversation_history[-5:]:  # Last 5 messages
-                if msg.role == "user":
-                    processed_chat_history.append(HumanMessage(content=msg.content))
-                else:
-                    processed_chat_history.append(AIMessage(content=msg.content))
+        # Call the agent
+        agent_response = agent.chat(
+            session_id=request_data.session_id,
+            message=request_data.message,
+            knowledge_base=kb_name,
+            database_connection=db_connection
+        )
         
-        # Execute query using the same service as /api/v1/query/
-        answer = execute_query(collection_name, request_data.query, processed_chat_history, tenant_id=tenant_id)
-        logger.info(f"Query executed successfully. Answer: {answer}")
+        response_text = agent_response.get("response", "I'm sorry, I couldn't process your request.")
+        tool_used = agent_response.get("tool_used")  # Can be added to agent response
         
         # Add assistant message
         assistant_message = service.add_message(
             session_id=request_data.session_id,
             tenant_id=tenant_id,
             role="assistant",
-            content=answer,
-            sources=None  # Can add source retrieval later if needed
+            content=response_text,
+            sources=None,  # Can add source retrieval later
+            tool_used=tool_used
         )
         
         # Update session activity
         service.update_session_activity(request_data.session_id, is_query=True)
         
-        return PublicChatQueryResponse(
-            answer=answer,
-            sources=[],  # Empty for now, matching the working endpoint
+        return PublicAgentChatResponse(
+            response=response_text,
+            sources=[],
+            tool_used=tool_used,
             session_id=request_data.session_id,
             timestamp=datetime.utcnow().isoformat()
         )
@@ -210,43 +197,42 @@ async def query_public_chat(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in public chat query: {str(e)}", exc_info=True)
-        return PublicChatQueryResponse(
-            answer="I'm sorry, I encountered an error while processing your question. Please try again.",
+        logger.error(f"Error in public agent chat: {str(e)}", exc_info=True)
+        return PublicAgentChatResponse(
+            response="I'm sorry, I encountered an error while processing your message. Please try again.",
             sources=[],
+            tool_used=None,
             session_id=request_data.session_id,
             timestamp=datetime.utcnow().isoformat()
         )
 
 
 @router.get(
-    "/api/v1/public-chat/config",
-    response_model=PublicChatConfigResponse,
+    "/api/v1/public-agent/config",
+    response_model=PublicAgentConfigResponse,
     responses={
-        503: {"model": PublicChatConfigDisabledResponse}
+        503: {"model": PublicAgentConfigDisabledResponse}
     },
-    tags=["Public Chat"]
+    tags=["Public Agent"]
 )
-async def get_public_chat_config(
+async def get_public_agent_config(
     request: Request,
     db: Session = Depends(get_db)
 ):
     """
-    Get the current public chat configuration for rendering the UI.
+    Get the current public agent configuration for rendering the UI.
     
     This endpoint is public and does not require authentication.
     """
     try:
         tenant_id = get_tenant_id_from_request(request)
-        service = PublicChatService(db)
+        service = PublicAgentService(db)
         
         config = service.get_config(tenant_id)
         if not config or not config.enabled:
-            # Return a proper config response with enabled=False
-            # This ensures the response matches the expected schema
-            return PublicChatConfigResponse(
+            return PublicAgentConfigResponse(
                 enabled=False,
-                welcome_message="Public chat is currently disabled.",
+                welcome_message="Public agent is currently disabled.",
                 suggested_questions=[],
                 branding=BrandingConfig(
                     primary_color="#0066CC",
@@ -259,13 +245,15 @@ async def get_public_chat_config(
                 features=FeaturesConfig(
                     show_sources=True,
                     allow_feedback=True,
-                    show_suggested_questions=True
+                    show_suggested_questions=True,
+                    enable_database_tools=True,
+                    enable_knowledge_base=True
                 )
             )
         
         config_dict = config.to_dict(include_sensitive=False)
         
-        return PublicChatConfigResponse(
+        return PublicAgentConfigResponse(
             enabled=config_dict["enabled"],
             welcome_message=config_dict["welcome_message"],
             suggested_questions=config_dict["suggested_questions"],
@@ -275,7 +263,7 @@ async def get_public_chat_config(
         )
         
     except Exception as e:
-        logger.error(f"Error getting public chat config: {str(e)}", exc_info=True)
+        logger.error(f"Error getting public agent config: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while fetching configuration"
@@ -283,23 +271,23 @@ async def get_public_chat_config(
 
 
 @router.post(
-    "/api/v1/public-chat/feedback",
-    response_model=PublicChatFeedbackResponse,
-    tags=["Public Chat"]
+    "/api/v1/public-agent/feedback",
+    response_model=PublicAgentFeedbackResponse,
+    tags=["Public Agent"]
 )
 async def submit_feedback(
-    feedback_data: PublicChatFeedbackRequest,
+    feedback_data: PublicAgentFeedbackRequest,
     request: Request,
     db: Session = Depends(get_db)
 ):
     """
-    Submit feedback for a chat message.
+    Submit feedback for an agent message.
     
     This endpoint is public and does not require authentication.
     """
     try:
         tenant_id = get_tenant_id_from_request(request)
-        service = PublicChatService(db)
+        service = PublicAgentService(db)
         
         # Verify session exists
         session = service.get_session(feedback_data.session_id)
@@ -318,7 +306,7 @@ async def submit_feedback(
             comment=feedback_data.comment
         )
         
-        return PublicChatFeedbackResponse()
+        return PublicAgentFeedbackResponse()
         
     except HTTPException:
         raise
@@ -335,27 +323,25 @@ async def submit_feedback(
 # ============================================================================
 
 @router.get(
-    "/api/v1/admin/public-chat/config",
-    response_model=AdminPublicChatConfigResponse,
+    "/api/v1/admin/public-agent/config",
+    response_model=AdminPublicAgentConfigResponse,
     dependencies=[Depends(require_admin)],
-    tags=["Public Chat Admin"]
+    tags=["Public Agent Admin"]
 )
 async def get_admin_config(
     current_user: TenantUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Get the full public chat configuration for admin panel.
+    Get the full public agent configuration for admin panel.
     
     Requires admin or super_admin role.
     """
     try:
-        service = PublicChatService(db)
+        service = PublicAgentService(db)
         
-        # Get or create config
         from ..models.tenant import Tenant
         
-        # current_user is a dict, not an object
         tenant_id = current_user["tenant_id"]
         
         try:
@@ -366,41 +352,23 @@ async def get_admin_config(
             tenant_name = "Unknown"
         
         config = service.get_or_create_config(tenant_id, tenant_name)
-        logger.info(f"Got config for tenant {tenant_id}")
+        config_dict = config.to_dict(include_sensitive=True)
         
-        try:
-            config_dict = config.to_dict(include_sensitive=True)
-            logger.info(f"Config dict: {config_dict}")
-        except Exception as dict_error:
-            logger.error(f"Error converting config to dict: {str(dict_error)}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error converting configuration: {str(dict_error)}"
-            )
+        return AdminPublicAgentConfigResponse(
+            enabled=config_dict["enabled"],
+            allowed_kbs=config_dict["allowed_kbs"],
+            allowed_dbs=config_dict["allowed_dbs"],
+            allowed_tools=config_dict.get("allowed_tools", ["tracking", "payments", "complaints", "delivery_estimates"]),
+            welcome_message=config_dict["welcome_message"],
+            suggested_questions=config_dict["suggested_questions"],
+            branding=BrandingConfig(**config_dict["branding"]),
+            rate_limit=RateLimitConfig(**config_dict["rate_limit"]),
+            features=FeaturesConfig(**config_dict["features"]),
+            created_at=config_dict.get("created_at"),
+            updated_at=config_dict.get("updated_at"),
+            updated_by=config_dict.get("updated_by")
+        )
         
-        try:
-            return AdminPublicChatConfigResponse(
-                enabled=config_dict["enabled"],
-                allowed_kbs=config_dict["allowed_kbs"],
-                welcome_message=config_dict["welcome_message"],
-                suggested_questions=config_dict["suggested_questions"],
-                branding=BrandingConfig(**config_dict["branding"]),
-                rate_limit=RateLimitConfig(**config_dict["rate_limit"]),
-                features=FeaturesConfig(**config_dict["features"]),
-                created_at=config_dict.get("created_at"),
-                updated_at=config_dict.get("updated_at"),
-                updated_by=config_dict.get("updated_by")
-            )
-        except Exception as response_error:
-            logger.error(f"Error creating response: {str(response_error)}", exc_info=True)
-            logger.error(f"Config dict was: {config_dict}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error creating response: {str(response_error)}"
-            )
-        
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error getting admin config: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -410,23 +378,23 @@ async def get_admin_config(
 
 
 @router.put(
-    "/api/v1/admin/public-chat/config",
-    response_model=AdminPublicChatConfigUpdateResponse,
+    "/api/v1/admin/public-agent/config",
+    response_model=AdminPublicAgentConfigUpdateResponse,
     dependencies=[Depends(require_admin)],
-    tags=["Public Chat Admin"]
+    tags=["Public Agent Admin"]
 )
 async def update_admin_config(
-    update_data: AdminPublicChatConfigUpdate,
+    update_data: AdminPublicAgentConfigUpdate,
     current_user: TenantUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Update the public chat configuration.
+    Update the public agent configuration.
     
     Requires admin or super_admin role.
     """
     try:
-        service = PublicChatService(db)
+        service = PublicAgentService(db)
         
         # Update configuration
         config = service.update_config(
@@ -437,10 +405,12 @@ async def update_admin_config(
         
         config_dict = config.to_dict(include_sensitive=True)
         
-        return AdminPublicChatConfigUpdateResponse(
-            config=AdminPublicChatConfigResponse(
+        return AdminPublicAgentConfigUpdateResponse(
+            config=AdminPublicAgentConfigResponse(
                 enabled=config_dict["enabled"],
                 allowed_kbs=config_dict["allowed_kbs"],
+                allowed_dbs=config_dict["allowed_dbs"],
+                allowed_tools=config_dict.get("allowed_tools", ["tracking", "payments", "complaints", "delivery_estimates"]),
                 welcome_message=config_dict["welcome_message"],
                 suggested_questions=config_dict["suggested_questions"],
                 branding=BrandingConfig(**config_dict["branding"]),
@@ -466,28 +436,23 @@ async def update_admin_config(
 
 
 @router.get(
-    "/api/v1/admin/public-chat/available-kbs",
+    "/api/v1/admin/public-agent/available-kbs",
     response_model=AvailableKnowledgeBasesResponse,
     dependencies=[Depends(require_admin)],
-    tags=["Public Chat Admin"]
+    tags=["Public Agent Admin"]
 )
 async def get_available_kbs(
     current_user: TenantUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Get list of knowledge bases that can be selected for public chat.
+    Get list of knowledge bases that can be selected for public agent.
     
     Requires admin or super_admin role.
     """
     try:
-        service = PublicChatService(db)
-        try:
-            kbs = service.get_available_kbs(current_user["tenant_id"])
-        except Exception as kb_error:
-            logger.error(f"Error in get_available_kbs: {str(kb_error)}", exc_info=True)
-            # Return empty list if there's an error
-            kbs = []
+        service = PublicAgentService(db)
+        kbs = service.get_available_kbs(current_user["tenant_id"])
         
         return AvailableKnowledgeBasesResponse(knowledge_bases=kbs)
         
@@ -500,9 +465,10 @@ async def get_available_kbs(
 
 
 @router.get(
-    "/api/v1/admin/public-chat/available-dbs",
+    "/api/v1/admin/public-agent/available-dbs",
+    response_model=AvailableDatabasesResponse,
     dependencies=[Depends(require_admin)],
-    tags=["Public Chat Admin"]
+    tags=["Public Agent Admin"]
 )
 async def get_available_dbs(
     current_user: TenantUser = Depends(get_current_user),
@@ -520,7 +486,7 @@ async def get_available_dbs(
         connections_file = ".db_connections/connections.json"
         
         if not os.path.exists(connections_file):
-            return {"databases": []}
+            return AvailableDatabasesResponse(databases=[])
         
         with open(connections_file, 'r') as f:
             connections = json.load(f)
@@ -528,15 +494,15 @@ async def get_available_dbs(
         # Format connections for response
         databases = []
         for conn_id, conn_data in connections.items():
-            databases.append({
-                "id": conn_id,
-                "name": conn_id.replace("-", " ").title(),
-                "type": conn_data.get("type", "unknown"),
-                "database": conn_data.get("database", ""),
-                "host": conn_data.get("host", "") if conn_data.get("type") != "sqlite" else None
-            })
+            databases.append(AvailableDatabase(
+                id=conn_id,
+                name=conn_id.replace("-", " ").title(),
+                type=conn_data.get("type", "unknown"),
+                database=conn_data.get("database", ""),
+                host=conn_data.get("host", "") if conn_data.get("type") != "sqlite" else None
+            ))
         
-        return {"databases": databases}
+        return AvailableDatabasesResponse(databases=databases)
         
     except Exception as e:
         logger.error(f"Error getting available databases: {str(e)}", exc_info=True)
@@ -547,10 +513,59 @@ async def get_available_dbs(
 
 
 @router.get(
-    "/api/v1/admin/public-chat/analytics",
-    response_model=PublicChatAnalyticsResponse,
+    "/api/v1/admin/public-agent/available-tools",
     dependencies=[Depends(require_admin)],
-    tags=["Public Chat Admin"]
+    tags=["Public Agent Admin"]
+)
+async def get_available_tools(
+    current_user: TenantUser = Depends(get_current_user)
+):
+    """
+    Get list of available tool categories that can be enabled for public agent.
+    
+    Requires admin or super_admin role.
+    """
+    return {
+        "tools": [
+            {
+                "id": "tracking",
+                "name": "Shipment Tracking",
+                "description": "Track shipments by ID or tracking number",
+                "functions": ["get_shipment_status", "track_by_tracking_number"]
+            },
+            {
+                "id": "customer_search",
+                "name": "Customer Search",
+                "description": "Search shipments by customer phone or email",
+                "functions": ["search_shipments_by_customer"]
+            },
+            {
+                "id": "delivery_estimates",
+                "name": "Delivery Estimates",
+                "description": "Get delivery date estimates",
+                "functions": ["get_delivery_estimate"]
+            },
+            {
+                "id": "payments",
+                "name": "Payment Information",
+                "description": "Check COD and payment status",
+                "functions": ["check_cod_payment_status"]
+            },
+            {
+                "id": "complaints",
+                "name": "Complaint Status",
+                "description": "Check complaint status for shipments",
+                "functions": ["get_complaint_status"]
+            }
+        ]
+    }
+
+
+@router.get(
+    "/api/v1/admin/public-agent/analytics",
+    response_model=PublicAgentAnalyticsResponse,
+    dependencies=[Depends(require_admin)],
+    tags=["Public Agent Admin"]
 )
 async def get_analytics(
     days: int = 30,
@@ -560,12 +575,12 @@ async def get_analytics(
     db: Session = Depends(get_db)
 ):
     """
-    Get usage statistics and analytics for public chat.
+    Get usage statistics and analytics for public agent.
     
     Requires admin or super_admin role.
     """
     try:
-        service = PublicChatService(db)
+        service = PublicAgentService(db)
         
         # Parse dates
         if start_date and end_date:
@@ -578,7 +593,7 @@ async def get_analytics(
         # Get analytics
         analytics = service.get_analytics(current_user["tenant_id"], start, end)
         
-        return PublicChatAnalyticsResponse(
+        return PublicAgentAnalyticsResponse(
             period={
                 "start_date": start.isoformat(),
                 "end_date": end.isoformat(),
@@ -587,8 +602,8 @@ async def get_analytics(
             summary=analytics,
             top_questions=analytics["top_questions"],
             feedback_summary=analytics["feedback_summary"],
-            usage_by_day=[],  # Can be implemented later
-            rate_limit_hits={"queries_per_minute": 0, "max_messages_per_session": 0}  # Can be tracked later
+            usage_by_day=[],
+            rate_limit_hits={"queries_per_minute": 0, "max_messages_per_session": 0}
         )
         
     except Exception as e:
@@ -600,10 +615,10 @@ async def get_analytics(
 
 
 @router.get(
-    "/api/v1/admin/public-chat/sessions/{session_id}",
+    "/api/v1/admin/public-agent/sessions/{session_id}",
     response_model=SessionDetailsResponse,
     dependencies=[Depends(require_admin)],
-    tags=["Public Chat Admin"]
+    tags=["Public Agent Admin"]
 )
 async def get_session_details(
     session_id: str,
@@ -616,7 +631,7 @@ async def get_session_details(
     Requires admin or super_admin role.
     """
     try:
-        service = PublicChatService(db)
+        service = PublicAgentService(db)
         
         session_details = service.get_session_details(session_id, current_user["tenant_id"])
         if not session_details:
