@@ -43,6 +43,7 @@ class LoginResponse(BaseModel):
     tenant_id: str
     user_id: str
     email: Optional[str] = None
+    role: Optional[str] = None
 
 
 class RefreshRequest(BaseModel):
@@ -156,9 +157,29 @@ async def login(
     
     # Create token data
     user_id = request.user_id or request.email or tenant.id
+    
+    # Fetch user role from tenant_users table
+    user_role = None
+    email_to_check = request.email or getattr(tenant, 'email', None)
+    try:
+        if email_to_check:
+            tenant_user = db.query(TenantUser).filter(
+                TenantUser.tenant_id == tenant.id,
+                TenantUser.email == email_to_check
+            ).first()
+            if tenant_user:
+                user_role = tenant_user.role
+                user_id = tenant_user.user_id  # Use the actual user_id from tenant_users
+                logger.info(f"Found user with role: {user_role}")
+            else:
+                logger.warning(f"No tenant_user found for email: {email_to_check}")
+    except Exception as e:
+        logger.error(f"Could not fetch user role: {e}", exc_info=True)
+    
     token_data = {
         "tenant_id": tenant.id,
-        "user_id": user_id
+        "user_id": user_id,
+        "role": user_role
     }
     
     # Generate tokens
@@ -181,7 +202,8 @@ async def login(
         expires_in=1800,  # 30 minutes
         tenant_id=tenant.id,
         user_id=user_id,
-        email=getattr(tenant, 'email', None)
+        email=getattr(tenant, 'email', None),
+        role=user_role
     )
 
 

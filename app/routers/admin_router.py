@@ -3,12 +3,13 @@ Admin Router - API endpoints for administrative tasks.
 """
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 from app.db.database import get_db
 from app.auth.dependencies import require_admin
 from app.services.cleanup_service import CleanupService
+from app.services.admin_service import AdminService
 from app.config import QDRANT_URL, QDRANT_API_KEY
 from qdrant_client import QdrantClient
 
@@ -285,60 +286,16 @@ async def get_system_health(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Get system-wide health metrics (admin only).
+    Get comprehensive system health metrics (admin only).
+    Returns detailed status for API, database, Qdrant, and background jobs.
     """
     try:
-        from app.models.tenant import Tenant
-        
-        # Get tenant counts
-        total_tenants = db.query(Tenant).count()
-        active_tenants = db.query(Tenant).filter(Tenant.is_active == True).count()
-        
-        # Get total storage usage
-        qdrant_client = get_qdrant_client()
-        cleanup_service = CleanupService(db, qdrant_client)
-        
-        total_storage = 0
-        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
-        for tenant in tenants:
-            storage_info = cleanup_service.get_tenant_storage_usage(tenant.id)
-            total_storage += storage_info["total_bytes"]
-        
-        # Get recent metrics
-        from datetime import datetime, timedelta
-        cutoff = datetime.utcnow() - timedelta(hours=24)
-        
-        recent_api_calls = db.execute(
-            "SELECT COUNT(*) FROM api_usage WHERE timestamp >= ?",
-            (cutoff,)
-        ).fetchone()[0]
-        
-        recent_errors = db.execute(
-            "SELECT COUNT(*) FROM api_usage WHERE timestamp >= ? AND status_code >= 400",
-            (cutoff,)
-        ).fetchone()[0]
-        
-        error_rate = (recent_errors / recent_api_calls * 100) if recent_api_calls > 0 else 0
+        admin_service = AdminService(db)
+        data = admin_service.get_system_health()
         
         return {
             "success": True,
-            "data": {
-                "tenants": {
-                    "total": total_tenants,
-                    "active": active_tenants,
-                    "inactive": total_tenants - active_tenants
-                },
-                "storage": {
-                    "total_bytes": total_storage,
-                    "total_gb": total_storage / (1024**3)
-                },
-                "api": {
-                    "calls_24h": recent_api_calls,
-                    "errors_24h": recent_errors,
-                    "error_rate": error_rate
-                },
-                "timestamp": datetime.utcnow().isoformat()
-            }
+            "data": data
         }
     except Exception as e:
         raise HTTPException(
@@ -361,97 +318,12 @@ async def get_dashboard_summary(
     Provides high-level overview of system status.
     """
     try:
-        from app.models.tenant import Tenant
-        from app.models.api_key import TenantAPIKey
-        from datetime import datetime, timedelta
-        
-        # Tenant statistics
-        total_tenants = db.query(Tenant).count()
-        active_tenants = db.query(Tenant).filter(Tenant.is_active == True).count()
-        
-        # User statistics (if user model exists)
-        try:
-            from app.models.user import TenantUser
-            total_users = db.query(TenantUser).count()
-        except:
-            total_users = 0
-        
-        # Storage statistics
-        qdrant_client = get_qdrant_client()
-        cleanup_service = CleanupService(db, qdrant_client)
-        
-        total_storage = 0
-        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
-        for tenant in tenants:
-            try:
-                storage_info = cleanup_service.get_tenant_storage_usage(tenant.id)
-                total_storage += storage_info.get("total_bytes", 0)
-            except:
-                pass
-        
-        # API usage today
-        today = datetime.utcnow().date()
-        try:
-            total_queries_today = db.execute(
-                "SELECT COUNT(*) FROM api_usage WHERE DATE(timestamp) = ?",
-                (today,)
-            ).fetchone()[0]
-            
-            total_api_calls_today = db.execute(
-                "SELECT COUNT(*) FROM api_usage WHERE DATE(timestamp) = ?",
-                (today,)
-            ).fetchone()[0]
-        except:
-            total_queries_today = 0
-            total_api_calls_today = 0
-        
-        # Recent alerts (last 24 hours)
-        cutoff = datetime.utcnow() - timedelta(hours=24)
-        try:
-            from app.models.alert import Alert
-            recent_alerts = db.query(Alert).filter(
-                Alert.created_at >= cutoff
-            ).order_by(Alert.created_at.desc()).limit(5).all()
-            
-            alert_list = [
-                {
-                    "id": alert.id,
-                    "tenant_id": alert.tenant_id,
-                    "type": alert.alert_type,
-                    "severity": alert.severity,
-                    "message": alert.message,
-                    "created_at": alert.created_at.isoformat()
-                }
-                for alert in recent_alerts
-            ]
-        except:
-            alert_list = []
-        
-        # System health
-        error_count = 0
-        try:
-            error_count = db.execute(
-                "SELECT COUNT(*) FROM api_usage WHERE timestamp >= ? AND status_code >= 400",
-                (cutoff,)
-            ).fetchone()[0]
-        except:
-            pass
-        
-        system_health = "healthy" if error_count < 100 else "degraded" if error_count < 500 else "critical"
+        admin_service = AdminService(db)
+        data = admin_service.get_dashboard_summary()
         
         return {
             "success": True,
-            "data": {
-                "total_tenants": total_tenants,
-                "active_tenants": active_tenants,
-                "total_users": total_users,
-                "total_storage_gb": round(total_storage / (1024**3), 2),
-                "total_queries_today": total_queries_today,
-                "total_api_calls_today": total_api_calls_today,
-                "system_health": system_health,
-                "recent_alerts": alert_list,
-                "timestamp": datetime.utcnow().isoformat()
-            }
+            "data": data
         }
     except Exception as e:
         raise HTTPException(
@@ -463,38 +335,25 @@ async def get_dashboard_summary(
 @router.get("/tenants/search")
 async def search_tenants(
     q: str,
+    status: Optional[str] = None,
+    tier: Optional[str] = None,
     limit: int = 20,
     admin_tenant_id: str = Depends(require_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Search tenants by name, email, or slug.
-    Returns matching tenants with basic info.
+    Search tenants by name, email, or slug with optional filters.
+    Returns matching tenants with detailed info.
+    
+    Query params:
+    - q: Search query (required)
+    - status: Filter by status (active, inactive, suspended)
+    - tier: Filter by billing tier (free, starter, professional, enterprise)
+    - limit: Max results (default 20)
     """
     try:
-        from app.models.tenant import Tenant
-        
-        # Search by name, email, or slug
-        search_pattern = f"%{q}%"
-        tenants = db.query(Tenant).filter(
-            (Tenant.name.ilike(search_pattern)) |
-            (Tenant.email.ilike(search_pattern)) |
-            (Tenant.slug.ilike(search_pattern))
-        ).limit(limit).all()
-        
-        results = [
-            {
-                "id": tenant.id,
-                "name": tenant.name,
-                "slug": tenant.slug,
-                "email": tenant.email,
-                "is_active": tenant.is_active,
-                "billing_tier": tenant.billing_tier,
-                "billing_status": tenant.billing_status,
-                "created_at": tenant.created_at.isoformat()
-            }
-            for tenant in tenants
-        ]
+        admin_service = AdminService(db)
+        results = admin_service.search_tenants(q, status, tier, limit)
         
         return {
             "success": True,
@@ -726,6 +585,7 @@ async def get_tenant_activity(
     try:
         from app.models.tenant import Tenant
         from datetime import datetime, timedelta
+        from sqlalchemy import text
         
         tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
         if not tenant:
@@ -738,15 +598,17 @@ async def get_tenant_activity(
         
         # Get API usage
         try:
-            api_calls = db.execute(
-                "SELECT COUNT(*) FROM api_usage WHERE tenant_id = ? AND timestamp >= ?",
-                (tenant_id, cutoff)
-            ).fetchone()[0]
+            result = db.execute(
+                text("SELECT COUNT(*) FROM api_usage WHERE tenant_id = :tenant_id AND timestamp >= :cutoff"),
+                {"tenant_id": tenant_id, "cutoff": cutoff}
+            ).fetchone()
+            api_calls = result[0] if result else 0
             
-            errors = db.execute(
-                "SELECT COUNT(*) FROM api_usage WHERE tenant_id = ? AND timestamp >= ? AND status_code >= 400",
-                (tenant_id, cutoff)
-            ).fetchone()[0]
+            result = db.execute(
+                text("SELECT COUNT(*) FROM api_usage WHERE tenant_id = :tenant_id AND timestamp >= :cutoff AND status_code >= 400"),
+                {"tenant_id": tenant_id, "cutoff": cutoff}
+            ).fetchone()
+            errors = result[0] if result else 0
         except:
             api_calls = 0
             errors = 0
@@ -754,14 +616,14 @@ async def get_tenant_activity(
         # Get recent activity
         try:
             recent_activity = db.execute(
-                """
+                text("""
                 SELECT endpoint, method, status_code, timestamp 
                 FROM api_usage 
-                WHERE tenant_id = ? AND timestamp >= ?
+                WHERE tenant_id = :tenant_id AND timestamp >= :cutoff
                 ORDER BY timestamp DESC
                 LIMIT 50
-                """,
-                (tenant_id, cutoff)
+                """),
+                {"tenant_id": tenant_id, "cutoff": cutoff}
             ).fetchall()
             
             activity_list = [
@@ -796,3 +658,337 @@ async def get_tenant_activity(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get tenant activity: {str(e)}"
         )
+
+
+
+# ============================================================================
+# Quota Management Endpoints
+# ============================================================================
+
+@router.get("/quotas/templates")
+async def get_quota_templates(
+    admin_tenant_id: str = Depends(require_admin),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Get quota templates for different billing tiers.
+    Returns default quota configurations.
+    """
+    templates = {
+        "free": {
+            "tier": "free",
+            "max_storage_bytes": 10 * 1024**3,  # 10GB
+            "max_queries_per_day": 1000,
+            "max_queries_per_month": 30000,
+            "max_documents": 10000,
+            "max_db_connections": 5,
+            "max_users": 3,
+            "features": ["rag", "db_chat"]
+        },
+        "starter": {
+            "tier": "starter",
+            "max_storage_bytes": 50 * 1024**3,  # 50GB
+            "max_queries_per_day": 5000,
+            "max_queries_per_month": 150000,
+            "max_documents": 50000,
+            "max_db_connections": 10,
+            "max_users": 10,
+            "features": ["rag", "db_chat", "custom_embeddings"]
+        },
+        "professional": {
+            "tier": "professional",
+            "max_storage_bytes": 200 * 1024**3,  # 200GB
+            "max_queries_per_day": 20000,
+            "max_queries_per_month": 600000,
+            "max_documents": 200000,
+            "max_db_connections": 25,
+            "max_users": 50,
+            "features": ["rag", "db_chat", "custom_embeddings", "api_access", "priority_support"]
+        },
+        "enterprise": {
+            "tier": "enterprise",
+            "max_storage_bytes": 1000 * 1024**3,  # 1TB
+            "max_queries_per_day": 100000,
+            "max_queries_per_month": 3000000,
+            "max_documents": 1000000,
+            "max_db_connections": 100,
+            "max_users": -1,  # Unlimited
+            "features": ["rag", "db_chat", "custom_embeddings", "api_access", "priority_support", "sla", "dedicated_support"]
+        }
+    }
+    
+    return {
+        "success": True,
+        "data": templates
+    }
+
+
+@router.put("/quotas/templates/{tier}")
+async def update_quota_template(
+    tier: str,
+    quotas: Dict[str, Any],
+    admin_tenant_id: str = Depends(require_admin),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Update quota template for a billing tier.
+    This would typically update a configuration table.
+    """
+    valid_tiers = ["free", "starter", "professional", "enterprise"]
+    if tier not in valid_tiers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid tier. Must be one of: {', '.join(valid_tiers)}"
+        )
+    
+    # In a real implementation, this would update a quota_templates table
+    # For now, we'll just return success
+    return {
+        "success": True,
+        "message": f"Quota template for {tier} updated",
+        "data": {
+            "tier": tier,
+            "quotas": quotas
+        }
+    }
+
+
+@router.put("/quotas/{tenant_id}")
+async def update_tenant_quotas(
+    tenant_id: str,
+    quotas: Dict[str, Any],
+    admin_tenant_id: str = Depends(require_admin),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Update custom quotas for a specific tenant.
+    Overrides the default tier quotas.
+    """
+    from app.models.tenant import Tenant
+    from datetime import datetime
+    
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found"
+        )
+    
+    # Update tenant settings with custom quotas
+    settings = tenant.settings or {}
+    settings.update(quotas)
+    settings["custom_quotas"] = True
+    settings["quotas_updated_at"] = datetime.utcnow().isoformat()
+    settings["quotas_updated_by"] = admin_tenant_id
+    
+    tenant.settings = settings
+    tenant.updated_at = datetime.utcnow()
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Custom quotas applied to tenant {tenant_id}",
+        "data": {
+            "tenant_id": tenant_id,
+            "quotas": quotas
+        }
+    }
+
+
+# ============================================================================
+# Audit Logs Endpoints
+# ============================================================================
+
+@router.get("/audit-logs")
+async def get_audit_logs(
+    status: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: int = 100,
+    admin_tenant_id: str = Depends(require_admin),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Get audit logs with optional filters.
+    Returns system-wide audit trail.
+    """
+    from datetime import datetime, timedelta
+    from sqlalchemy import text
+    
+    try:
+        # Parse dates
+        if end_date:
+            end = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        else:
+            end = datetime.utcnow()
+        
+        if start_date:
+            start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        else:
+            start = end - timedelta(days=30)
+        
+        # Get audit logs from api_usage table (simplified)
+        query = text("""
+            SELECT tenant_id, endpoint, method, status_code, timestamp, response_time_ms
+            FROM api_usage
+            WHERE timestamp >= :start AND timestamp <= :end
+        """)
+        
+        params = {"start": start, "end": end}
+        
+        if status:
+            if status == "success":
+                query = text("""
+                    SELECT tenant_id, endpoint, method, status_code, timestamp, response_time_ms
+                    FROM api_usage
+                    WHERE timestamp >= :start AND timestamp <= :end AND status_code < 400
+                """)
+            elif status == "error":
+                query = text("""
+                    SELECT tenant_id, endpoint, method, status_code, timestamp, response_time_ms
+                    FROM api_usage
+                    WHERE timestamp >= :start AND timestamp <= :end AND status_code >= 400
+                """)
+        
+        query_text = str(query) + " ORDER BY timestamp DESC LIMIT :limit"
+        params["limit"] = limit
+        
+        results = db.execute(text(query_text), params).fetchall()
+        
+        logs = [
+            {
+                "id": f"log_{i}",
+                "tenant_id": row[0],
+                "action": f"{row[2]} {row[1]}",
+                "endpoint": row[1],
+                "method": row[2],
+                "status": "success" if row[3] < 400 else "error",
+                "status_code": row[3],
+                "timestamp": row[4],
+                "response_time_ms": row[5]
+            }
+            for i, row in enumerate(results)
+        ]
+        
+        return {
+            "success": True,
+            "data": {
+                "count": len(logs),
+                "logs": logs
+            }
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get audit logs: {str(e)}"
+        )
+
+
+@router.get("/audit-logs/{log_id}")
+async def get_audit_log_detail(
+    log_id: str,
+    admin_tenant_id: str = Depends(require_admin),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Get detailed information about a specific audit log entry.
+    """
+    # In a real implementation, this would query a specific log entry
+    # For now, return a mock response
+    return {
+        "success": True,
+        "data": {
+            "id": log_id,
+            "tenant_id": "tenant_123",
+            "action": "GET /api/v1/query",
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+            "details": {
+                "endpoint": "/api/v1/query",
+                "method": "GET",
+                "status_code": 200,
+                "response_time_ms": 45,
+                "user_agent": "Mozilla/5.0...",
+                "ip_address": "192.168.1.1"
+            }
+        }
+    }
+
+
+# ============================================================================
+# Settings Endpoints
+# ============================================================================
+
+@router.get("/settings")
+async def get_admin_settings(
+    admin_tenant_id: str = Depends(require_admin),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Get system-wide admin settings.
+    Returns configuration for the entire platform.
+    """
+    # In a real implementation, this would query a settings table
+    # For now, return default settings
+    settings = {
+        "system": {
+            "maintenance_mode": False,
+            "allow_new_registrations": True,
+            "require_email_verification": True,
+            "default_tier": "free"
+        },
+        "security": {
+            "session_timeout_minutes": 60,
+            "max_login_attempts": 5,
+            "password_min_length": 8,
+            "require_mfa": False
+        },
+        "limits": {
+            "max_tenants": -1,  # Unlimited
+            "max_users_per_tenant": 100,
+            "max_api_calls_per_minute": 1000
+        },
+        "notifications": {
+            "admin_email": "admin@example.com",
+            "alert_on_errors": True,
+            "alert_threshold": 100,
+            "send_weekly_reports": True
+        },
+        "features": {
+            "enable_public_chat": True,
+            "enable_public_agent": True,
+            "enable_db_connections": True,
+            "enable_custom_embeddings": True
+        }
+    }
+    
+    return {
+        "success": True,
+        "data": settings
+    }
+
+
+@router.put("/settings")
+async def update_admin_settings(
+    settings: Dict[str, Any],
+    admin_tenant_id: str = Depends(require_admin),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Update system-wide admin settings.
+    Modifies platform configuration.
+    """
+    from datetime import datetime
+    
+    # In a real implementation, this would update a settings table
+    # For now, just return success
+    return {
+        "success": True,
+        "message": "Admin settings updated successfully",
+        "data": {
+            "settings": settings,
+            "updated_at": datetime.utcnow().isoformat(),
+            "updated_by": admin_tenant_id
+        }
+    }

@@ -5,12 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 from pydantic import BaseModel
+import logging
 
 from app.db.database import get_db
-from app.auth.dependencies import get_current_user, get_current_tenant, require_admin
+from app.auth.dependencies import get_current_user, get_tenant_id, require_admin
 from app.services.quota_service import QuotaService, QuotaExceededException
 
 router = APIRouter(prefix="/api/v1/quota", tags=["quota"])
+logger = logging.getLogger(__name__)
 
 
 class QuotaUpdateRequest(BaseModel):
@@ -45,13 +47,13 @@ async def get_quota_status(
         quota_service = QuotaService(db)
         
         # Get comprehensive status
-        status = quota_service.get_quota_status(tenant_id)
-        quotas = status["quotas"]
-        daily = status["daily_usage"]
-        monthly = status["monthly_usage"]
-        storage = status["storage"]
-        connections = status["connections"]
-        documents = status["documents"]
+        quota_status = quota_service.get_quota_status(tenant_id)
+        quotas = quota_status["quotas"]
+        daily = quota_status["daily_usage"]
+        monthly = quota_status["monthly_usage"]
+        storage = quota_status["storage"]
+        connections = quota_status["connections"]
+        documents = quota_status["documents"]
         
         # Format response according to spec
         return {
@@ -87,15 +89,17 @@ async def get_quota_status(
             }
         }
     except Exception as e:
+        import traceback
+        logger.error(f"Failed to fetch quota status: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch quota status: {str(e)}"
+            detail=f"Failed to fetch quota status: {str(e)}. Please ensure quota tables are created by running migrations."
         )
 
 
 @router.get("/limits")
 async def get_quota_limits(
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """Get quota limits for the tenant."""
@@ -116,7 +120,7 @@ async def get_quota_limits(
 @router.get("/usage")
 async def get_quota_usage(
     period: str = "daily",
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -149,7 +153,7 @@ async def get_quota_usage(
 @router.get("/history")
 async def get_quota_history(
     days: int = 30,
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """

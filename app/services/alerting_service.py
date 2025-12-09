@@ -242,20 +242,21 @@ class AlertingService:
             alert: Alert dictionary
         """
         try:
+            from sqlalchemy import text
             self.db.execute(
-                """
+                text("""
                 INSERT INTO alert_history 
                     (tenant_id, alert_type, message, severity, metric_value, threshold_value)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    tenant_id,
-                    alert["type"],
-                    alert["message"],
-                    alert["severity"],
-                    alert.get("current") or alert.get("error_rate") or alert.get("avg_time_ms"),
-                    alert.get("limit") or alert.get("threshold") or alert.get("threshold_ms")
-                )
+                VALUES (:tenant_id, :alert_type, :message, :severity, :metric_value, :threshold_value)
+                """),
+                {
+                    "tenant_id": tenant_id,
+                    "alert_type": alert["type"],
+                    "message": alert["message"],
+                    "severity": alert["severity"],
+                    "metric_value": alert.get("current") or alert.get("error_rate") or alert.get("avg_time_ms"),
+                    "threshold_value": alert.get("limit") or alert.get("threshold") or alert.get("threshold_ms")
+                }
             )
             self.db.commit()
         except Exception as e:
@@ -379,23 +380,24 @@ class AlertingService:
         Returns:
             List of alert history records
         """
+        from sqlalchemy import text
         cutoff_date = datetime.utcnow() - timedelta(days=days)
         
         query = """
             SELECT alert_type, message, severity, metric_value, threshold_value, 
                    triggered_at, is_resolved, resolved_at
             FROM alert_history
-            WHERE tenant_id = ? AND triggered_at >= ?
+            WHERE tenant_id = :tenant_id AND triggered_at >= :cutoff_date
         """
-        params = [tenant_id, cutoff_date]
+        params = {"tenant_id": tenant_id, "cutoff_date": cutoff_date}
         
         if severity:
-            query += " AND severity = ?"
-            params.append(severity)
+            query += " AND severity = :severity"
+            params["severity"] = severity
         
         query += " ORDER BY triggered_at DESC"
         
-        results = self.db.execute(query, params).fetchall()
+        results = self.db.execute(text(query), params).fetchall()
         
         return [
             {
@@ -422,13 +424,14 @@ class AlertingService:
             True if resolved successfully
         """
         try:
+            from sqlalchemy import text
             self.db.execute(
-                """
+                text("""
                 UPDATE alert_history
-                SET is_resolved = TRUE, resolved_at = ?
-                WHERE id = ?
-                """,
-                (datetime.utcnow(), alert_id)
+                SET is_resolved = TRUE, resolved_at = :resolved_at
+                WHERE id = :alert_id
+                """),
+                {"resolved_at": datetime.utcnow(), "alert_id": alert_id}
             )
             self.db.commit()
             return True

@@ -10,7 +10,7 @@ import csv
 import io
 
 from app.db.database import get_db
-from app.auth.dependencies import get_current_tenant, require_admin
+from app.auth.dependencies import get_tenant_id, require_admin
 from app.services.metrics_service import MetricsService
 from app.services.alerting_service import AlertingService
 
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/v1/metrics", tags=["metrics"])
 async def get_tenant_metrics(
     metric_type: str = Query("daily", regex="^(hourly|daily|monthly)$"),
     days: int = Query(30, ge=1, le=365),
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -56,7 +56,7 @@ async def get_tenant_metrics(
 @router.get("/storage")
 async def get_storage_metrics(
     days: int = Query(30, ge=1, le=365),
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -84,7 +84,7 @@ async def get_storage_metrics(
 @router.get("/queries")
 async def get_query_metrics(
     days: int = Query(7, ge=1, le=90),
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -112,7 +112,7 @@ async def get_query_metrics(
 @router.get("/errors")
 async def get_error_metrics(
     days: int = Query(7, ge=1, le=90),
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -139,7 +139,7 @@ async def get_error_metrics(
 
 @router.get("/alerts")
 async def get_active_alerts(
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """Get active alerts for the tenant."""
@@ -163,7 +163,7 @@ async def get_active_alerts(
 async def get_alert_history(
     days: int = Query(7, ge=1, le=90),
     severity: Optional[str] = Query(None, regex="^(info|warning|critical)$"),
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -195,7 +195,7 @@ async def get_alert_history(
 async def export_metrics(
     format: str = Query("csv", regex="^(csv|json)$"),
     days: int = Query(30, ge=1, le=365),
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
 ):
     """

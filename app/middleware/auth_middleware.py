@@ -4,14 +4,12 @@ Authentication middleware for tenant validation and request logging.
 import time
 import logging
 from typing import Callable, Optional
-from fastapi import Request, Response, status
+from fastapi import Request, Response, status, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from jose import JWTError
 
 from ..auth.jwt_handler import verify_token
-from ..services.api_key_service import APIKeyService
-from ..db.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -31,32 +29,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/docs",
         "/redoc",
         "/openapi.json",
-        "/health"
+        "/health",
+        "/api/v1/auth/login",
+        "/api/v1/auth/register"
     ]
-    
-    def _validate_api_key(self, api_key: str) -> Optional[dict]:
-        """
-        Validate an API key and return tenant info.
-        
-        Args:
-            api_key: API key to validate
-            
-        Returns:
-            Dictionary with tenant_id and other info, or None if invalid
-        """
-        db = SessionLocal()
-        try:
-            return APIKeyService.validate_api_key(db, api_key)
-        finally:
-            db.close()
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """
         Process each request, validate tenant, and log with tenant context.
         
-        Supports two authentication methods:
-        1. JWT Bearer token (Authorization: Bearer <token>)
-        2. API Key (Authorization: Bearer <api_key> or X-API-Key: <api_key>)
+        Supports JWT Bearer token authentication (Authorization: Bearer <token>)
         
         Args:
             request: Incoming request
@@ -72,67 +54,40 @@ class AuthMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             return response
         
-        # Extract tenant_id from token, API key, or header
+        # Extract tenant_id from JWT token or header
         tenant_id = None
         auth_method = None
         auth_header = request.headers.get("Authorization")
-        x_api_key = request.headers.get("X-API-Key")
         x_tenant_id = request.headers.get("X-Tenant-ID")
         
-        # Try JWT token first
+        # Try JWT token
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
             
-            # Check if it's a JWT token (contains dots) or API key (starts with sk_)
-            if token.startswith("sk_"):
-                # It's an API key
-                api_key_info = self._validate_api_key(token)
-                if api_key_info:
-                    tenant_id = api_key_info["tenant_id"]
-                    auth_method = "api_key"
-                    request.state.api_key_id = api_key_info["api_key_id"]
-                    request.state.api_key_name = api_key_info["key_name"]
-                else:
-                    logger.warning("Invalid API key provided")
-                    return JSONResponse(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        content={"detail": "Invalid API key"},
-                        headers={"WWW-Authenticate": "Bearer"}
-                    )
-            else:
-                # It's a JWT token
-                try:
-                    payload = verify_token(token)
-                    tenant_id = payload.get("tenant_id")
-                    auth_method = "jwt"
-                except JWTError as e:
-                    logger.warning(f"Invalid JWT token: {str(e)}")
-                    return JSONResponse(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        content={"detail": "Invalid authentication token"},
-                        headers={"WWW-Authenticate": "Bearer"}
-                    )
-                except Exception as e:
-                    logger.error(f"Token verification error: {str(e)}")
-                    return JSONResponse(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        content={"detail": "Authentication error"},
-                        headers={"WWW-Authenticate": "Bearer"}
-                    )
-        
-        # Try X-API-Key header
-        elif x_api_key:
-            api_key_info = self._validate_api_key(x_api_key)
-            if api_key_info:
-                tenant_id = api_key_info["tenant_id"]
-                auth_method = "api_key"
-                request.state.api_key_id = api_key_info["api_key_id"]
-                request.state.api_key_name = api_key_info["key_name"]
-            else:
-                logger.warning("Invalid API key in X-API-Key header")
+            try:
+                payload = verify_token(token)
+                tenant_id = payload.get("tenant_id")
+                auth_method = "jwt"
+            except JWTError as e:
+                logger.warning(f"Invalid JWT token (JWTError): {str(e)}")
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    content={"detail": "Invalid API key"}
+                    content={"detail": f"Invalid authentication token: {str(e)}"},
+                    headers={"WWW-Authenticate": "Bearer"}
+                )
+            except HTTPException as e:
+                logger.error(f"Token verification error (HTTPException): {e.status_code}: {e.detail}")
+                return JSONResponse(
+                    status_code=e.status_code,
+                    content={"detail": e.detail},
+                    headers={"WWW-Authenticate": "Bearer"}
+                )
+            except Exception as e:
+                logger.error(f"Token verification error (Unknown): {type(e).__name__}: {str(e)}")
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={"detail": f"Authentication error: {str(e)}"},
+                    headers={"WWW-Authenticate": "Bearer"}
                 )
         
         # Fallback to X-Tenant-ID header (for backward compatibility)

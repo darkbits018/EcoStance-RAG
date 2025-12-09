@@ -52,7 +52,6 @@ class UsageTrackingMiddleware(BaseHTTPMiddleware):
         # Extract request details
         tenant_id = getattr(request.state, "tenant_id", None)
         auth_method = getattr(request.state, "auth_method", None)
-        api_key_id = getattr(request.state, "api_key_id", None)
         
         endpoint = request.url.path
         method = request.method
@@ -72,6 +71,7 @@ class UsageTrackingMiddleware(BaseHTTPMiddleware):
         error_type = None
         error_message = None
         response = None
+        status_code = 500  # Default to 500 in case of error
         
         try:
             response = await call_next(request)
@@ -115,7 +115,6 @@ class UsageTrackingMiddleware(BaseHTTPMiddleware):
                         status_code=status_code,
                         response_time_ms=response_time_ms,
                         auth_method=auth_method,
-                        api_key_id=api_key_id,
                         error_type=error_type,
                         error_message=error_message,
                         user_agent=user_agent,

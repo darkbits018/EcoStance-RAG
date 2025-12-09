@@ -25,8 +25,7 @@ class APIUsage(Base):
     method = Column(String(10), nullable=False)  # GET, POST, PUT, DELETE
     
     # Authentication
-    auth_method = Column(String(50))  # jwt, api_key, header
-    api_key_id = Column(String(36), nullable=True)  # If authenticated via API key
+    auth_method = Column(String(50))  # jwt, header
     
     # Response details
     status_code = Column(Integer, nullable=False, index=True)
@@ -65,7 +64,6 @@ class UsageTrackingService:
         status_code: int,
         response_time_ms: float,
         auth_method: Optional[str] = None,
-        api_key_id: Optional[str] = None,
         error_type: Optional[str] = None,
         error_message: Optional[str] = None,
         user_agent: Optional[str] = None,
@@ -84,7 +82,6 @@ class UsageTrackingService:
             status_code: Response status code
             response_time_ms: Response time in milliseconds
             auth_method: Authentication method used
-            api_key_id: API key ID if authenticated via API key
             error_type: Error type if request failed
             error_message: Error message if request failed
             user_agent: User agent string
@@ -100,7 +97,6 @@ class UsageTrackingService:
                 status_code=status_code,
                 response_time_ms=response_time_ms,
                 auth_method=auth_method,
-                api_key_id=api_key_id,
                 error_type=error_type,
                 error_message=error_message[:500] if error_message else None,
                 user_agent=user_agent[:255] if user_agent else None,

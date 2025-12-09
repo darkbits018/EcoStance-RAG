@@ -55,7 +55,6 @@ class Tenant(Base):
     databases = relationship("TenantDatabase", back_populates="tenant", cascade="all, delete-orphan")
     knowledge_bases = relationship("TenantKnowledgeBase", back_populates="tenant", cascade="all, delete-orphan")
     users = relationship("TenantUser", back_populates="tenant", cascade="all, delete-orphan")
-    api_keys = relationship("TenantAPIKey", back_populates="tenant", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Tenant(id={self.id}, name={self.name}, slug={self.slug})>"

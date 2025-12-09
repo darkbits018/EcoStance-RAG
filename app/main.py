@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 
-from .routers import upload, qdrant_upload, query_router, management_router, db_router, auth_router, file_router, tenant_router, admin_router, api_key_router, usage_router, quota_router, metrics_router, public_chat_router, public_agent_router
+from .routers import upload, qdrant_upload, query_router, management_router, db_router, auth_router, file_router, tenant_router, admin_router, usage_router, quota_router, metrics_router, public_chat_router, public_agent_router
 from .services.cleanup_service import cleanup_service
 from .services.scheduler_service import start_scheduler, stop_scheduler
 from .middleware.auth_middleware import AuthMiddleware
@@ -69,20 +69,19 @@ app.add_middleware(ValidationMiddleware)  # First (validates before processing)
 
 app.include_router(auth_router.router, prefix="/api/v1", tags=["0. Authentication"])
 app.include_router(tenant_router.router, prefix="/api/v1", tags=["1. Tenant Management"])
-app.include_router(api_key_router.router, tags=["2. API Keys"])
-app.include_router(usage_router.router, tags=["3. Usage Analytics"])
-app.include_router(quota_router.router, tags=["4. Quotas & Limits"])
-app.include_router(metrics_router.router, tags=["5. Metrics & Monitoring"])
-app.include_router(upload.router, prefix="/api/v1", tags=["6. File Upload"])
-app.include_router(qdrant_upload.router, prefix="/api/v1", tags=["7. Processing & Upload"])
-app.include_router(query_router.router, prefix="/api/v1", tags=["8. RAG Query"])
-app.include_router(management_router.router, prefix="/api/v1/manage", tags=["9. KB Management"])
-app.include_router(db_router.router, prefix="/api/v1", tags=["10. Database Interaction"])
-app.include_router(file_router.router, prefix="/api/v1", tags=["11. File Management"])
-app.include_router(admin_router.router, tags=["12. Admin"])
-app.include_router(agent_router, prefix="/api/v1/beta", tags=["13. AI Agent (Beta)"])
-app.include_router(public_chat_router.router, tags=["14. Public Chat"])
-app.include_router(public_agent_router.router, tags=["15. Public Agent"])
+app.include_router(usage_router.router, tags=["2. Usage Analytics"])
+app.include_router(quota_router.router, tags=["3. Quotas & Limits"])
+app.include_router(metrics_router.router, tags=["4. Metrics & Monitoring"])
+app.include_router(upload.router, prefix="/api/v1", tags=["5. File Upload"])
+app.include_router(qdrant_upload.router, prefix="/api/v1", tags=["6. Processing & Upload"])
+app.include_router(query_router.router, prefix="/api/v1", tags=["7. RAG Query"])
+app.include_router(management_router.router, prefix="/api/v1/manage", tags=["8. KB Management"])
+app.include_router(db_router.router, prefix="/api/v1", tags=["9. Database Interaction"])
+app.include_router(file_router.router, prefix="/api/v1", tags=["10. File Management"])
+app.include_router(admin_router.router, tags=["11. Admin"])
+app.include_router(agent_router, prefix="/api/v1/beta", tags=["12. AI Agent (Beta)"])
+app.include_router(public_chat_router.router, tags=["13. Public Chat"])
+app.include_router(public_agent_router.router, tags=["14. Public Agent"])
 
 
 @app.get("/")

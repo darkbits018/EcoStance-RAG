@@ -220,40 +220,7 @@ A comprehensive multi-tenant platform for RAG (Retrieval-Augmented Generation) a
 
 ---
 
-### 7. API Key Management
-
-**Status:** ✅ Complete
-
-**Features:**
-- Programmatic API access
-- Key generation and rotation
-- Usage tracking per key
-- Key expiration
-- Rate limiting per key
-- Scope-based permissions
-
-**Key Types:**
-- Full access keys
-- Read-only keys
-- KB-specific keys
-- Time-limited keys
-
-**Endpoints:**
-- `POST /api/v1/api-keys` - Create API key
-- `GET /api/v1/api-keys` - List API keys
-- `GET /api/v1/api-keys/{key_id}` - Get key details
-- `PUT /api/v1/api-keys/{key_id}` - Update key
-- `DELETE /api/v1/api-keys/{key_id}` - Revoke key
-- `POST /api/v1/api-keys/{key_id}/rotate` - Rotate key
-
-**Usage:**
-```bash
-curl -H "X-API-Key: your-api-key" https://api.example.com/api/v1/query/
-```
-
----
-
-### 8. Resource Quotas & Limits
+### 7. Resource Quotas & Limits
 
 **Status:** ✅ Complete
 
@@ -285,7 +252,7 @@ curl -H "X-API-Key: your-api-key" https://api.example.com/api/v1/query/
 
 ---
 
-### 9. Usage Tracking & Analytics
+### 8. Usage Tracking & Analytics
 
 **Status:** ✅ Complete
 
@@ -314,7 +281,7 @@ curl -H "X-API-Key: your-api-key" https://api.example.com/api/v1/query/
 
 ---
 
-### 10. Public Chat Widget
+### 9. Public Chat Widget
 
 **Status:** ✅ Complete
 
@@ -353,7 +320,7 @@ curl -H "X-API-Key: your-api-key" https://api.example.com/api/v1/query/
 
 ---
 
-### 11. Public AI Agent
+### 10. Public AI Agent
 
 **Status:** ✅ Complete
 
@@ -381,7 +348,7 @@ curl -H "X-API-Key: your-api-key" https://api.example.com/api/v1/query/
 
 ---
 
-### 12. Admin Dashboard Features
+### 11. Admin Dashboard Features
 
 **Status:** ✅ Complete
 
@@ -414,6 +381,7 @@ curl -H "X-API-Key: your-api-key" https://api.example.com/api/v1/query/
 - Secure session management
 - CORS configuration
 - Rate limiting on auth endpoints
+- No API key authentication (removed for simplicity)
 
 ### Authorization Security
 
@@ -421,7 +389,6 @@ curl -H "X-API-Key: your-api-key" https://api.example.com/api/v1/query/
 - Role-Based Access Control (RBAC)
 - Permission-based endpoint protection
 - Tenant-scoped data access
-- API key authentication
 - Admin-only endpoints
 
 ### Data Isolation
@@ -447,7 +414,7 @@ curl -H "X-API-Key: your-api-key" https://api.example.com/api/v1/query/
 
 ✅ **Implemented:**
 - HTTPS enforcement (production)
-- API key authentication
+- JWT authentication only
 - Rate limiting
 - Request validation
 - SQL injection prevention
@@ -478,9 +445,6 @@ curl -H "X-API-Key: your-api-key" https://api.example.com/api/v1/query/
 **Database (9 endpoints)**
 - Connect, Query, Execute, Schema, Upload, Connection management
 
-**API Keys (6 endpoints)**
-- Create, List, Get, Update, Delete, Rotate
-
 **Quotas (3 endpoints)**
 - Status, Usage, Update
 
@@ -496,7 +460,7 @@ curl -H "X-API-Key: your-api-key" https://api.example.com/api/v1/query/
 **Admin (5 endpoints)**
 - Tenants, Users, Health, Audit logs, Quotas
 
-**Total: ~65 API endpoints**
+**Total: ~59 API endpoints**
 
 ---
 

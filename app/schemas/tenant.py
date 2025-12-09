@@ -31,8 +31,8 @@ class TenantResponse(BaseModel):
     phone: Optional[str]
     is_active: bool
     created_at: datetime
-    billing_tier: str
-    billing_status: str
+    billing_tier: Optional[str] = "free"
+    billing_status: Optional[str] = "active"
     logo_url: Optional[str] = None
     logo_filename: Optional[str] = None
     
