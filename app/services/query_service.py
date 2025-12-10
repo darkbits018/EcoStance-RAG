@@ -6,11 +6,17 @@ from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents import Document # Import Document for type hinting if needed
 import logging
+import time
 
 from app.config import GOOGLE_API_KEY, QDRANT_URL, QDRANT_API_KEY, EMBEDDING_MODEL_NAME
 
+# === BEGIN: branch error handling ===
+from ..core.logging import get_logger, log_error_with_context, log_operation_start, log_operation_success, log_operation_failure
+from ..core.exceptions import ExternalServiceError, ValidationError
+# === END: branch error handling ===
+
 # Configure logging for this module
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 logging.basicConfig(level=logging.INFO) # Ensure basic config is set if not already
 
 # --- Service Initialization ---
@@ -22,14 +28,42 @@ def get_llm():
     Temperature is set low (0.3) for more consistent, factual responses
     while still allowing some flexibility in phrasing.
     """
-    if not GOOGLE_API_KEY:
-        raise ValueError("GOOGLE_API_KEY must be set in environment variables.")
-    return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-lite",
-        google_api_key=GOOGLE_API_KEY,
-        temperature=0.3,  # Slightly higher for more natural responses
-        max_output_tokens=1024  # Ensure complete answers
-    )
+    # === BEGIN: branch error handling ===
+    try:
+        if not GOOGLE_API_KEY:
+            raise ValidationError(
+                message="Google API key is not configured",
+                field="GOOGLE_API_KEY"
+            )
+        
+        log_operation_start(logger, "initialize_llm", model="gemini-2.5-flash-lite")
+        
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            google_api_key=GOOGLE_API_KEY,
+            temperature=0.3,  # Slightly higher for more natural responses
+            max_output_tokens=1024  # Ensure complete answers
+        )
+        
+        log_operation_success(logger, "initialize_llm")
+        return llm
+        
+    except Exception as e:
+        if isinstance(e, ValidationError):
+            raise
+        
+        log_error_with_context(
+            logger=logger,
+            message="Failed to initialize Gemini LLM",
+            error=e,
+            remediation="Check Google API key configuration and network connectivity"
+        )
+        raise ExternalServiceError(
+            service_name="Google Gemini",
+            operation="initialization",
+            original_error=str(e)
+        )
+    # === END: branch error handling ===
 
 def get_retriever(collection_name: str, top_k: int = 5):
     """
@@ -42,17 +76,62 @@ def get_retriever(collection_name: str, top_k: int = 5):
     Returns:
         Qdrant retriever instance
     """
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-    qdrant_store = Qdrant.from_existing_collection(
-        url=QDRANT_URL,
-        api_key=QDRANT_API_KEY,
-        collection_name=collection_name,
-        embedding=embeddings,
-        content_payload_key="text",
-    )
-    # Retrieve more chunks for better context coverage
-    # Higher k = more context but slower, lower k = faster but might miss info
-    return qdrant_store.as_retriever(search_kwargs={"k": top_k})
+    # === BEGIN: branch error handling ===
+    try:
+        if not collection_name or not collection_name.strip():
+            raise ValidationError(
+                message="Collection name cannot be empty",
+                field="collection_name"
+            )
+        
+        if top_k <= 0:
+            raise ValidationError(
+                message="top_k must be a positive integer",
+                field="top_k"
+            )
+        
+        log_operation_start(
+            logger, 
+            "initialize_retriever", 
+            collection_name=collection_name, 
+            top_k=top_k
+        )
+        
+        embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
+        qdrant_store = Qdrant.from_existing_collection(
+            url=QDRANT_URL,
+            api_key=QDRANT_API_KEY,
+            collection_name=collection_name,
+            embedding=embeddings,
+            content_payload_key="text",
+        )
+        # Retrieve more chunks for better context coverage
+        # Higher k = more context but slower, lower k = faster but might miss info
+        retriever = qdrant_store.as_retriever(search_kwargs={"k": top_k})
+        
+        log_operation_success(
+            logger, 
+            "initialize_retriever", 
+            collection_name=collection_name
+        )
+        return retriever
+        
+    except ValidationError:
+        raise
+    except Exception as e:
+        log_error_with_context(
+            logger=logger,
+            message=f"Failed to initialize retriever for collection '{collection_name}'",
+            error=e,
+            extra_context={"collection_name": collection_name, "top_k": top_k},
+            remediation="Check Qdrant connection and verify collection exists"
+        )
+        raise ExternalServiceError(
+            service_name="Qdrant",
+            operation="retriever_initialization",
+            original_error=str(e)
+        )
+    # === END: branch error handling ===
 
 def format_docs(docs: list[Document]) -> str:
     """Formats a list of Documents into a single string."""
@@ -154,21 +233,116 @@ def execute_query(collection_name: str, query: str, chat_history: list = None, t
         chat_history: Previous conversation messages
         tenant_id: Tenant identifier for filtering (optional, for future use)
     """
-    if chat_history is None:
-        chat_history = []
+    # === BEGIN: branch error handling ===
+    start_time = time.time()
     
-    rag_chain = create_rag_chain(collection_name)
-    
-    # Log the retrieval for debugging
-    retriever = get_retriever(collection_name)
-    retrieved_docs = retriever.invoke(query)
-    formatted_context = format_docs(retrieved_docs)
-    logger.info(f"Retrieved Context for tenant {tenant_id}: {formatted_context}")
-
-    # Invoke the rag_chain with the query and chat history
-    answer = rag_chain.invoke({
-        "question": query,
-        "chat_history": chat_history
-    })
-    
-    return answer
+    try:
+        # Input validation
+        if not query or not query.strip():
+            raise ValidationError(
+                message="Query cannot be empty",
+                field="query"
+            )
+        
+        if not collection_name or not collection_name.strip():
+            raise ValidationError(
+                message="Collection name cannot be empty",
+                field="collection_name"
+            )
+        
+        if chat_history is None:
+            chat_history = []
+        
+        log_operation_start(
+            logger, 
+            "execute_rag_query", 
+            collection_name=collection_name,
+            query_length=len(query),
+            chat_history_length=len(chat_history),
+            tenant_id=tenant_id
+        )
+        
+        # Create RAG chain with error handling
+        try:
+            rag_chain = create_rag_chain(collection_name)
+        except Exception as e:
+            raise ExternalServiceError(
+                service_name="RAG Chain",
+                operation="creation",
+                original_error=str(e)
+            )
+        
+        # Log the retrieval for debugging with error handling
+        try:
+            retriever = get_retriever(collection_name)
+            retrieved_docs = retriever.invoke(query)
+            formatted_context = format_docs(retrieved_docs)
+            logger.info(
+                f"Retrieved context for tenant {tenant_id}",
+                extra={
+                    "context_length": len(formatted_context),
+                    "num_docs": len(retrieved_docs),
+                    "tenant_id": tenant_id
+                }
+            )
+        except Exception as e:
+            log_error_with_context(
+                logger=logger,
+                message="Failed to retrieve context documents",
+                error=e,
+                extra_context={"collection_name": collection_name, "query": query[:100]},
+                remediation="Check Qdrant collection and embedding service"
+            )
+            # Continue with RAG chain execution even if retrieval logging fails
+        
+        # Invoke the rag_chain with the query and chat history
+        try:
+            answer = rag_chain.invoke({
+                "question": query,
+                "chat_history": chat_history
+            })
+        except Exception as e:
+            raise ExternalServiceError(
+                service_name="RAG Chain",
+                operation="query_execution",
+                original_error=str(e)
+            )
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        log_operation_success(
+            logger, 
+            "execute_rag_query", 
+            duration_ms=duration_ms,
+            answer_length=len(answer) if answer else 0,
+            tenant_id=tenant_id
+        )
+        
+        return answer
+        
+    except (ValidationError, ExternalServiceError):
+        # Re-raise known exceptions
+        duration_ms = int((time.time() - start_time) * 1000)
+        log_operation_failure(
+            logger,
+            "execute_rag_query",
+            error=e,
+            duration_ms=duration_ms,
+            tenant_id=tenant_id
+        )
+        raise
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        log_operation_failure(
+            logger,
+            "execute_rag_query",
+            error=e,
+            duration_ms=duration_ms,
+            remediation="Check all service dependencies and try again",
+            tenant_id=tenant_id
+        )
+        raise ExternalServiceError(
+            service_name="RAG System",
+            operation="query_execution",
+            original_error=str(e)
+        )
+    # === END: branch error handling ===

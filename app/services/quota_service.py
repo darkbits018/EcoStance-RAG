@@ -9,9 +9,16 @@ from sqlalchemy import func, text
 
 from app.models.tenant import Tenant
 
-logger = logging.getLogger(__name__)
+# === BEGIN: branch error handling ===
+from ..core.logging import get_logger, log_error_with_context, log_operation_start, log_operation_success, log_operation_failure
+from ..core.exceptions import QuotaExceededError, ResourceNotFoundError, DatabaseError, ValidationError
+# === END: branch error handling ===
+
+logger = get_logger(__name__)
 
 
+# === BEGIN: branch error handling ===
+# Legacy exception class kept for backward compatibility
 class QuotaExceededException(Exception):
     """Exception raised when a tenant exceeds their quota."""
     def __init__(self, message: str, quota_type: str, current: int, limit: int):
@@ -20,6 +27,7 @@ class QuotaExceededException(Exception):
         self.current = current
         self.limit = limit
         super().__init__(self.message)
+# === END: branch error handling ===
 
 
 class QuotaService:
@@ -83,32 +91,99 @@ class QuotaService:
         Returns:
             Dictionary of quota limits
         """
-        # Get tenant to determine tier
-        tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first()
-        if not tenant:
-            raise ValueError(f"Tenant {tenant_id} not found")
-        
-        # Check if custom quotas exist in database
-        result = self.db.execute(
-            text("SELECT * FROM tenant_quotas WHERE tenant_id = :tenant_id"),
-            {"tenant_id": tenant_id}
-        ).fetchone()
-        
-        if result:
-            return {
-                "max_queries_per_day": result[2],
-                "max_queries_per_month": result[3],
-                "max_documents": result[4],
-                "max_storage_bytes": result[5],
-                "max_db_connections": result[6],
-                "max_concurrent_queries": result[7],
-                "max_api_calls_per_minute": result[8],
-                "max_api_calls_per_hour": result[9],
-            }
-        
-        # Return default quotas based on tier
-        tier = tenant.billing_tier or "free"
-        return self.TIER_QUOTAS.get(tier, self.TIER_QUOTAS["free"])
+        # === BEGIN: branch error handling ===
+        try:
+            if not tenant_id or not tenant_id.strip():
+                raise ValidationError(
+                    message="Tenant ID cannot be empty",
+                    field="tenant_id"
+                )
+            
+            log_operation_start(logger, "get_tenant_quotas", tenant_id=tenant_id)
+            
+            # Get tenant to determine tier
+            try:
+                tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first()
+            except Exception as db_error:
+                raise DatabaseError(
+                    operation="tenant_lookup",
+                    original_error=str(db_error)
+                )
+            
+            if not tenant:
+                raise ResourceNotFoundError(
+                    resource_type="Tenant",
+                    resource_id=tenant_id
+                )
+            
+            # Check if custom quotas exist in database
+            try:
+                result = self.db.execute(
+                    text("SELECT * FROM tenant_quotas WHERE tenant_id = :tenant_id"),
+                    {"tenant_id": tenant_id}
+                ).fetchone()
+            except Exception as db_error:
+                log_error_with_context(
+                    logger=logger,
+                    message="Failed to query custom quotas, using default quotas",
+                    error=db_error,
+                    extra_context={"tenant_id": tenant_id}
+                )
+                result = None
+            
+            if result:
+                quotas = {
+                    "max_queries_per_day": result[2],
+                    "max_queries_per_month": result[3],
+                    "max_documents": result[4],
+                    "max_storage_bytes": result[5],
+                    "max_db_connections": result[6],
+                    "max_concurrent_queries": result[7],
+                    "max_api_calls_per_minute": result[8],
+                    "max_api_calls_per_hour": result[9],
+                }
+                log_operation_success(
+                    logger, 
+                    "get_tenant_quotas", 
+                    quota_source="custom",
+                    tenant_id=tenant_id
+                )
+                return quotas
+            
+            # Return default quotas based on tier
+            tier = tenant.billing_tier or "free"
+            quotas = self.TIER_QUOTAS.get(tier, self.TIER_QUOTAS["free"])
+            
+            log_operation_success(
+                logger, 
+                "get_tenant_quotas", 
+                quota_source="default",
+                tier=tier,
+                tenant_id=tenant_id
+            )
+            return quotas
+            
+        except (ValidationError, ResourceNotFoundError, DatabaseError):
+            log_operation_failure(
+                logger,
+                "get_tenant_quotas",
+                error=e,
+                tenant_id=tenant_id
+            )
+            raise
+        except Exception as e:
+            log_operation_failure(
+                logger,
+                "get_tenant_quotas",
+                error=e,
+                remediation="Check database connectivity and tenant configuration",
+                tenant_id=tenant_id
+            )
+            raise DatabaseError(
+                operation="get_tenant_quotas",
+                original_error=str(e)
+            )
+        # === END: branch error handling ===
     
     def get_current_usage(self, tenant_id: str, period_type: str = "daily") -> Dict[str, int]:
         """
@@ -172,21 +247,87 @@ class QuotaService:
         Returns:
             Tuple of (allowed: bool, error_message: Optional[str])
         """
-        quotas = self.get_tenant_quotas(tenant_id)
-        daily_usage = self.get_current_usage(tenant_id, "daily")
-        monthly_usage = self.get_current_usage(tenant_id, "monthly")
-        
-        # Check daily quota
-        daily_limit = quotas["max_queries_per_day"]
-        if daily_limit > 0 and daily_usage["query_count"] >= daily_limit:
-            return False, f"Daily query quota exceeded ({daily_usage['query_count']}/{daily_limit})"
-        
-        # Check monthly quota
-        monthly_limit = quotas["max_queries_per_month"]
-        if monthly_limit > 0 and monthly_usage["query_count"] >= monthly_limit:
-            return False, f"Monthly query quota exceeded ({monthly_usage['query_count']}/{monthly_limit})"
-        
-        return True, None
+        # === BEGIN: branch error handling ===
+        try:
+            if not tenant_id or not tenant_id.strip():
+                raise ValidationError(
+                    message="Tenant ID cannot be empty",
+                    field="tenant_id"
+                )
+            
+            log_operation_start(logger, "check_query_quota", tenant_id=tenant_id)
+            
+            try:
+                quotas = self.get_tenant_quotas(tenant_id)
+                daily_usage = self.get_current_usage(tenant_id, "daily")
+                monthly_usage = self.get_current_usage(tenant_id, "monthly")
+            except Exception as e:
+                log_error_with_context(
+                    logger=logger,
+                    message="Failed to get quota or usage data",
+                    error=e,
+                    extra_context={"tenant_id": tenant_id},
+                    remediation="Check database connectivity and tenant configuration"
+                )
+                # Return conservative result - deny access if we can't check quotas
+                return False, "Unable to verify quota limits. Please try again."
+            
+            # Check daily quota
+            daily_limit = quotas["max_queries_per_day"]
+            if daily_limit > 0 and daily_usage["query_count"] >= daily_limit:
+                error_msg = f"Daily query quota exceeded ({daily_usage['query_count']}/{daily_limit})"
+                logger.warning(
+                    "Daily quota exceeded",
+                    extra={
+                        "tenant_id": tenant_id,
+                        "current": daily_usage['query_count'],
+                        "limit": daily_limit
+                    }
+                )
+                return False, error_msg
+            
+            # Check monthly quota
+            monthly_limit = quotas["max_queries_per_month"]
+            if monthly_limit > 0 and monthly_usage["query_count"] >= monthly_limit:
+                error_msg = f"Monthly query quota exceeded ({monthly_usage['query_count']}/{monthly_limit})"
+                logger.warning(
+                    "Monthly quota exceeded",
+                    extra={
+                        "tenant_id": tenant_id,
+                        "current": monthly_usage['query_count'],
+                        "limit": monthly_limit
+                    }
+                )
+                return False, error_msg
+            
+            log_operation_success(
+                logger,
+                "check_query_quota",
+                tenant_id=tenant_id,
+                daily_usage=daily_usage["query_count"],
+                monthly_usage=monthly_usage["query_count"]
+            )
+            return True, None
+            
+        except ValidationError:
+            log_operation_failure(
+                logger,
+                "check_query_quota",
+                error=e,
+                tenant_id=tenant_id
+            )
+            raise
+        except Exception as e:
+            log_operation_failure(
+                logger,
+                "check_query_quota",
+                error=e,
+                remediation="Check database connectivity and quota configuration",
+                tenant_id=tenant_id
+            )
+            # Return conservative result - deny access if quota check fails
+            return False, "Unable to verify quota limits. Please try again."
+        # === END: branch error handling ===
     
     def check_document_quota(self, tenant_id: str, additional_docs: int = 1) -> Tuple[bool, Optional[str]]:
         """

@@ -14,7 +14,34 @@ from .middleware.usage_tracking_middleware import UsageTrackingMiddleware
 # Import QuickShip AI Agent
 from quickship_agent.router import router as agent_router
 
-# Configure logging
+# === BEGIN: branch error handling ===
+# Import new error handling infrastructure
+from .core.logging import setup_structured_logging, get_logger
+from .core.error_handlers import (
+    base_app_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+    general_exception_handler
+)
+from .core.exceptions import BaseAppException
+from .middleware.request_id_middleware import RequestIDMiddleware
+from fastapi import HTTPException
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+# Setup structured logging
+setup_structured_logging(
+    log_level="INFO",
+    enable_console=True,
+    enable_file=True,
+    error_file="errorlog.txt"
+)
+
+# Get structured logger
+logger = get_logger(__name__)
+# === END: branch error handling ===
+
+# Legacy logging configuration (kept for backward compatibility)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 
@@ -29,53 +56,139 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    logging.info("🚀 Starting application...")
+    # === BEGIN: branch error handling ===
+    # Startup with enhanced error handling
+    logger.info("🚀 Starting application...")
     
-    # Initialize singletons
+    # Initialize singletons with graceful error handling
     from .services.qdrant_service import get_qdrant_client
     from .services.embedding_service import load_embedding_model
+    from .core.logging import log_error_with_context
     
     try:
         # Pre-load Qdrant client
         get_qdrant_client()
-        logging.info("✓ Qdrant client initialized")
+        logger.info("✓ Qdrant client initialized")
     except Exception as e:
-        logging.error(f"Failed to initialize Qdrant client: {e}")
+        log_error_with_context(
+            logger=logger,
+            message="Failed to initialize Qdrant client",
+            error=e,
+            remediation="Check Qdrant connection settings and ensure service is running"
+        )
     
     try:
         # Pre-load embedding model
         load_embedding_model()
-        logging.info("✓ Embedding model loaded")
+        logger.info("✓ Embedding model loaded")
     except Exception as e:
-        logging.error(f"Failed to load embedding model: {e}")
+        log_error_with_context(
+            logger=logger,
+            message="Failed to load embedding model",
+            error=e,
+            remediation="Check model configuration and available memory"
+        )
     
-    # Start services
-    await cleanup_service.start()
-    start_scheduler()
+    # Start services with error handling
+    try:
+        await cleanup_service.start()
+        logger.info("✓ Cleanup service started")
+    except Exception as e:
+        log_error_with_context(
+            logger=logger,
+            message="Failed to start cleanup service",
+            error=e,
+            remediation="Check database connectivity and permissions"
+        )
     
-    logging.info("✓ Application started successfully")
+    try:
+        start_scheduler()
+        logger.info("✓ Scheduler started")
+    except Exception as e:
+        log_error_with_context(
+            logger=logger,
+            message="Failed to start scheduler",
+            error=e,
+            remediation="Check system resources and permissions"
+        )
+    
+    logger.info("✓ Application started successfully")
+    # === END: branch error handling ===
     
     yield
     
-    # Shutdown
-    logging.info("🛑 Shutting down application...")
+    # === BEGIN: branch error handling ===
+    # Shutdown with enhanced error handling
+    logger.info("🛑 Shutting down application...")
     
-    stop_scheduler()
-    await cleanup_service.stop()
+    try:
+        stop_scheduler()
+        logger.info("✓ Scheduler stopped")
+    except Exception as e:
+        log_error_with_context(
+            logger=logger,
+            message="Error stopping scheduler",
+            error=e
+        )
     
-    # Close connections
+    try:
+        await cleanup_service.stop()
+        logger.info("✓ Cleanup service stopped")
+    except Exception as e:
+        log_error_with_context(
+            logger=logger,
+            message="Error stopping cleanup service",
+            error=e
+        )
+    
+    # Close connections with error handling
     from .services.qdrant_service import close_qdrant_client
     from .services.embedding_service import unload_embedding_model
     from .db.database import close_db_connections
     
-    close_qdrant_client()
-    unload_embedding_model()
-    close_db_connections()
+    try:
+        close_qdrant_client()
+        logger.info("✓ Qdrant client closed")
+    except Exception as e:
+        log_error_with_context(
+            logger=logger,
+            message="Error closing Qdrant client",
+            error=e
+        )
     
-    logging.info("✓ Application shutdown complete")
+    try:
+        unload_embedding_model()
+        logger.info("✓ Embedding model unloaded")
+    except Exception as e:
+        log_error_with_context(
+            logger=logger,
+            message="Error unloading embedding model",
+            error=e
+        )
+    
+    try:
+        close_db_connections()
+        logger.info("✓ Database connections closed")
+    except Exception as e:
+        log_error_with_context(
+            logger=logger,
+            message="Error closing database connections",
+            error=e
+        )
+    
+    logger.info("✓ Application shutdown complete")
+    # === END: branch error handling ===
 
 app = FastAPI(lifespan=lifespan)
+
+# === BEGIN: branch error handling ===
+# Add global exception handlers
+app.add_exception_handler(BaseAppException, base_app_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, general_exception_handler)
+# === END: branch error handling ===
 
 # Configure CORS - MUST be added before other middleware
 app.add_middleware(
@@ -99,11 +212,14 @@ app.add_middleware(
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
-# Add middleware (order matters: validation -> rate limiter -> auth -> usage tracking)
+# === BEGIN: branch error handling ===
+# Add middleware (order matters: request ID -> validation -> rate limiter -> auth -> usage tracking)
 app.add_middleware(UsageTrackingMiddleware)  # Last (logs after response)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RateLimitMiddleware)
-app.add_middleware(ValidationMiddleware)  # First (validates before processing)
+app.add_middleware(ValidationMiddleware)
+app.add_middleware(RequestIDMiddleware)  # First (sets up request context)
+# === END: branch error handling ===
 
 app.include_router(auth_router.router, prefix="/api/v1", tags=["0. Authentication"])
 app.include_router(tenant_router.router, prefix="/api/v1", tags=["1. Tenant Management"])
