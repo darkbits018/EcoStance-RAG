@@ -6,11 +6,13 @@ Provides REST API endpoints for the agent
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Optional
+from sqlalchemy.orm import Session
 import uuid
 import logging
 
 from .agent_service import AgentService
 from app.auth.dependencies import get_current_user
+from app.db.database import get_db
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -19,10 +21,14 @@ logger = logging.getLogger(__name__)
 _agent_services: Dict[str, AgentService] = {}
 
 
-def get_agent_service(tenant_id: str) -> AgentService:
+def get_agent_service(tenant_id: str, db: Session = None) -> AgentService:
     """Get or create an agent service for a tenant"""
     if tenant_id not in _agent_services:
-        _agent_services[tenant_id] = AgentService(tenant_id=tenant_id)
+        _agent_services[tenant_id] = AgentService(tenant_id=tenant_id, db_session=db)
+    else:
+        # Update db_session if provided
+        if db:
+            _agent_services[tenant_id].db_session = db
     return _agent_services[tenant_id]
 
 
@@ -49,7 +55,8 @@ class ConversationHistory(BaseModel):
 @router.post("/agent/chat", response_model=ChatResponse)
 async def chat_with_agent(
     request: ChatRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     Chat with the QuickShip AI agent
@@ -72,8 +79,8 @@ async def chat_with_agent(
         
         logger.info(f"Agent chat request - Tenant: {tenant_id}, Session: {session_id}, Message: {request.message}, KB: {request.knowledge_base}, DB: {request.database_connection}")
         
-        # Get tenant-specific agent service
-        agent_service = get_agent_service(tenant_id)
+        # Get tenant-specific agent service with db session for tracking
+        agent_service = get_agent_service(tenant_id, db)
         
         # Process message through agent with selected KB and DB
         result = agent_service.chat(

@@ -6,7 +6,8 @@ Handles conversational AI for customer service queries
 import re
 import json
 import logging
-from typing import List, Dict
+import time
+from typing import List, Dict, Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -79,7 +80,7 @@ When you need to use a tool, call it directly and use the result to answer the c
 class AgentService:
     """Service for managing agent conversations with tool calling"""
     
-    def __init__(self, tenant_id: str = None):
+    def __init__(self, tenant_id: str = None, db_session=None):
         self.llm = ChatGoogleGenerativeAI(
             model=AGENT_MODEL,
             google_api_key=GOOGLE_API_KEY,
@@ -87,6 +88,7 @@ class AgentService:
         )
         
         self.tenant_id = tenant_id
+        self.db_session = db_session  # For LLM tracking
         
         # Define available tools
         base_tools = [
@@ -288,8 +290,37 @@ Examples:
 - "Hello" → {{"tool": "none", "response": "Hi! How can I help you today?"}}"""
             
             logger.info(f"Asking LLM to analyze query: {message}")
+            
+            # Track LLM call if db_session is available
+            start_time = time.time()
             analysis_response = self.llm.invoke([HumanMessage(content=analysis_prompt)])
+            latency_ms = int((time.time() - start_time) * 1000)
+            
             analysis_text = analysis_response.content if hasattr(analysis_response, 'content') else str(analysis_response)
+            
+            # Track usage if we have db_session and tenant_id
+            if self.db_session and self.tenant_id:
+                try:
+                    from app.services.llm_tracking_service import LLMTrackingService
+                    
+                    # Estimate tokens (rough approximation: 1 token ≈ 4 chars)
+                    input_tokens = len(analysis_prompt) // 4
+                    output_tokens = len(analysis_text) // 4
+                    
+                    LLMTrackingService.track_llm_call(
+                        db=self.db_session,
+                        tenant_id=str(self.tenant_id),
+                        model=AGENT_MODEL,
+                        operation_type='agent',
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        success=True,
+                        latency_ms=latency_ms,
+                        endpoint='/api/v1/beta/agent/chat',
+                        session_id=session_id
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to track LLM usage: {e}")
             
             logger.info(f"LLM analysis: {analysis_text}")
             

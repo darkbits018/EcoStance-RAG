@@ -1,23 +1,67 @@
 from sentence_transformers import SentenceTransformer
 import torch
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from threading import Lock
+import logging
 
-# --- Model Loading ---
-def load_embedding_model():
-    """
-    Loads the sentence-transformer model from HuggingFace and moves it to the
-    appropriate device (GPU if available, otherwise CPU).
+logger = logging.getLogger(__name__)
 
-    Returns:
-        The loaded SentenceTransformer model.
+# Global embedding model instance (singleton pattern)
+_embedding_model: Optional[SentenceTransformer] = None
+_embedding_model_lock = Lock()
+
+
+def load_embedding_model() -> SentenceTransformer:
     """
-    # Check if a CUDA-enabled GPU is available, otherwise use CPU
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f"Embedding service: Using device '{device}'")
+    Returns a singleton embedding model instance.
     
-    # Load a pre-trained model. 'all-MiniLM-L6-v2' is a great all-rounder.
-    model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
-    return model
+    This ensures the model is loaded only once and reused across all requests,
+    significantly improving performance and reducing memory usage.
+    
+    The model loading is expensive (~500MB RAM, ~2-3 seconds), so we cache it.
+    
+    Returns:
+        SentenceTransformer: Singleton embedding model instance
+    """
+    global _embedding_model
+    
+    # Double-checked locking pattern for thread-safe singleton
+    if _embedding_model is None:
+        with _embedding_model_lock:
+            if _embedding_model is None:
+                # Check if a CUDA-enabled GPU is available, otherwise use CPU
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                logger.info(f"Loading embedding model singleton on device: {device}")
+                
+                # Load a pre-trained model. 'all-MiniLM-L6-v2' is a great all-rounder.
+                _embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+                
+                logger.info("✓ Embedding model singleton loaded successfully")
+    
+    return _embedding_model
+
+
+def unload_embedding_model():
+    """
+    Unload the embedding model from memory.
+    Should be called on application shutdown.
+    """
+    global _embedding_model
+    
+    if _embedding_model is not None:
+        with _embedding_model_lock:
+            if _embedding_model is not None:
+                try:
+                    del _embedding_model
+                    _embedding_model = None
+                    
+                    # Clear CUDA cache if using GPU
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    
+                    logger.info("✓ Embedding model unloaded successfully")
+                except Exception as e:
+                    logger.error(f"Error unloading embedding model: {e}")
 
 # --- Embedding Creation ---
 def create_embeddings(chunks: List[Dict[str, Any]], model: SentenceTransformer) -> List[Dict[str, Any]]:

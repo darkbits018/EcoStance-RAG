@@ -14,6 +14,11 @@ sqlparse
 langdetect
 nltk
 
+# OCR Dependencies
+pytesseract
+Pillow
+pdf2image
+
 # Embedding Dependencies
 sentence-transformers
 torch

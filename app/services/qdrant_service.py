@@ -2,20 +2,72 @@ from qdrant_client import QdrantClient, models
 from typing import List, Dict, Any, Optional
 import uuid
 import logging
+from threading import Lock
 
 from app.config import QDRANT_URL, QDRANT_API_KEY, EMBEDDING_VECTOR_SIZE, DISTANCE_METRIC
 
 logger = logging.getLogger(__name__)
 
-def get_qdrant_client():
+# Global Qdrant client instance (singleton pattern)
+_qdrant_client: Optional[QdrantClient] = None
+_qdrant_client_lock = Lock()
+
+
+def get_qdrant_client() -> QdrantClient:
     """
-    Initializes and returns the Qdrant client using credentials from the config.
-    """
-    if not QDRANT_URL or not QDRANT_API_KEY:
-        raise ValueError("QDRANT_URL and QDRANT_API_KEY must be set in environment variables.")
+    Returns a singleton Qdrant client instance with connection pooling.
     
-    client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
-    return client
+    This ensures only one client is created and reused across all requests,
+    improving performance and reducing connection overhead.
+    
+    Returns:
+        QdrantClient: Singleton Qdrant client instance
+        
+    Raises:
+        ValueError: If QDRANT_URL or QDRANT_API_KEY are not set
+    """
+    global _qdrant_client
+    
+    # Double-checked locking pattern for thread-safe singleton
+    if _qdrant_client is None:
+        with _qdrant_client_lock:
+            if _qdrant_client is None:
+                if not QDRANT_URL or not QDRANT_API_KEY:
+                    raise ValueError("QDRANT_URL and QDRANT_API_KEY must be set in environment variables.")
+                
+                logger.info(f"Initializing Qdrant client singleton: {QDRANT_URL}")
+                
+                # Create client with connection pooling settings
+                _qdrant_client = QdrantClient(
+                    url=QDRANT_URL,
+                    api_key=QDRANT_API_KEY,
+                    timeout=30,  # Request timeout in seconds
+                    # Connection pooling is handled internally by httpx (used by qdrant-client)
+                    # The client maintains persistent connections automatically
+                )
+                
+                logger.info("✓ Qdrant client singleton initialized successfully")
+    
+    return _qdrant_client
+
+
+def close_qdrant_client():
+    """
+    Close the Qdrant client connection.
+    Should be called on application shutdown.
+    """
+    global _qdrant_client
+    
+    if _qdrant_client is not None:
+        with _qdrant_client_lock:
+            if _qdrant_client is not None:
+                try:
+                    _qdrant_client.close()
+                    logger.info("✓ Qdrant client closed successfully")
+                except Exception as e:
+                    logger.error(f"Error closing Qdrant client: {e}")
+                finally:
+                    _qdrant_client = None
 
 def create_collection_if_not_exists(client: QdrantClient, collection_name: str):
     """

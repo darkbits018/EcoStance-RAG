@@ -9,13 +9,20 @@ import re
 from typing import List, Dict, Any, Tuple
 from bs4 import BeautifulSoup
 import sqlparse
+import logging
+
+# Import OCR service
+from app.services.ocr_service import extract_text_from_image
+
+logger = logging.getLogger(__name__)
 
 # --- OCR Fallback Service ---
 def _ocr_page_image(page_image: bytes) -> Tuple[str, float]:
     """
-    Placeholder for a real OCR function to process images of pages.
-    In a real implementation, this would use a library like Tesseract (via pytesseract)
-    or a cloud-based OCR service (e.g., Google Vision AI, AWS Textract).
+    Extract text from a page image using OCR.
+    
+    This function now uses the real OCR service. If OCR is unavailable or disabled,
+    it will gracefully fall back to placeholder text without breaking the pipeline.
 
     Args:
         page_image (bytes): The image content of a single page.
@@ -23,9 +30,8 @@ def _ocr_page_image(page_image: bytes) -> Tuple[str, float]:
     Returns:
         A tuple containing the extracted text and a confidence score (0.0 to 1.0).
     """
-    # For example: text = pytesseract.image_to_string(Image.open(io.BytesIO(page_image)))
-    print("OCR fallback triggered for a page. Implement real OCR for content extraction.")
-    return "[OCR fallback: text would be extracted from image here]", 0.5  # Return dummy text and confidence
+    logger.info("OCR fallback triggered for a page image")
+    return extract_text_from_image(page_image, preprocess=True)
 
 # --- PDF Extraction Service ---
 def _extract_pdf(file_path: str) -> Tuple[List[Dict[str, Any]], str]:

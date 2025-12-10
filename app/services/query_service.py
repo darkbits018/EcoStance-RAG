@@ -16,13 +16,32 @@ logging.basicConfig(level=logging.INFO) # Ensure basic config is set if not alre
 # --- Service Initialization ---
 
 def get_llm():
-    """Initializes and returns the Gemini LLM."""
+    """
+    Initializes and returns the Gemini LLM with optimized settings.
+    
+    Temperature is set low (0.3) for more consistent, factual responses
+    while still allowing some flexibility in phrasing.
+    """
     if not GOOGLE_API_KEY:
         raise ValueError("GOOGLE_API_KEY must be set in environment variables.")
-    return ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", google_api_key=GOOGLE_API_KEY, temperature=0.1)
+    return ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash-lite",
+        google_api_key=GOOGLE_API_KEY,
+        temperature=0.3,  # Slightly higher for more natural responses
+        max_output_tokens=1024  # Ensure complete answers
+    )
 
-def get_retriever(collection_name: str):
-    """Initializes and returns a Qdrant retriever for a specific collection."""
+def get_retriever(collection_name: str, top_k: int = 5):
+    """
+    Initializes and returns a Qdrant retriever for a specific collection.
+    
+    Args:
+        collection_name: Name of the Qdrant collection
+        top_k: Number of chunks to retrieve (default: 5, increased for better coverage)
+    
+    Returns:
+        Qdrant retriever instance
+    """
     embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
     qdrant_store = Qdrant.from_existing_collection(
         url=QDRANT_URL,
@@ -31,8 +50,9 @@ def get_retriever(collection_name: str):
         embedding=embeddings,
         content_payload_key="text",
     )
-    # Increase k to retrieve more chunks for better coverage
-    return qdrant_store.as_retriever(search_kwargs={"k": 5})
+    # Retrieve more chunks for better context coverage
+    # Higher k = more context but slower, lower k = faster but might miss info
+    return qdrant_store.as_retriever(search_kwargs={"k": top_k})
 
 def format_docs(docs: list[Document]) -> str:
     """Formats a list of Documents into a single string."""
@@ -43,25 +63,47 @@ def create_rag_chain(collection_name: str):
     retriever = get_retriever(collection_name)
     llm = get_llm()
 
-    # Stateful Answering Prompt with chat history
+    # Improved Answering Prompt - reduces "I don't know" responses
     qa_prompt = ChatPromptTemplate.from_messages(
         [
-            ("human", """You are a helpful assistant. Answer the user's question using ONLY the information provided in the context below.
+            ("system", """You are an expert assistant helping users find information from a knowledge base. Your goal is to provide helpful, accurate answers based on the provided context.
 
-Context:
+RESPONSE GUIDELINES:
+
+1. PRIMARY GOAL: Answer the question using information from the context
+   - Extract and synthesize relevant information
+   - Connect related pieces of information logically
+   - Provide complete, helpful answers
+
+2. WHEN INFORMATION IS PARTIAL:
+   - Answer what you CAN from the context
+   - Be specific about what information is available
+   - Example: "Based on the context, I can tell you that [answer]. However, I don't have information about [missing part]."
+
+3. WHEN INFORMATION IS MISSING:
+   - Only say "I don't have information" if the context is completely unrelated
+   - Try to provide related information that might be helpful
+   - Suggest what the user might want to ask instead
+
+4. ANSWER QUALITY:
+   - Be conversational and natural
+   - Provide context and explanations
+   - Use examples from the context when helpful
+   - Structure longer answers with bullet points or paragraphs
+
+5. ACCURACY:
+   - Base answers on the context provided
+   - Don't invent information not in the context
+   - If making logical connections, make them clear
+   - Cite specific details from the context
+
+Remember: Your job is to be HELPFUL while staying ACCURATE. Provide the best answer possible with the information available."""),
+            ("human", """Context from knowledge base:
 {context}
 
-Question: {question}
+User question: {question}
 
-CRITICAL INSTRUCTIONS:
-- Answer ONLY based on information explicitly stated in the context above
-- Do NOT make assumptions or infer information not directly stated
-- Do NOT combine unrelated pieces of information
-- Quote or paraphrase directly from the context when answering
-- If the context does not contain the specific information needed to answer the question, respond with: "I don't have information about that in the knowledge base."
-- Be accurate and precise - do not add extra details not found in the context
-
-Answer:"""),
+Provide a helpful, accurate answer based on the context above:"""),
         ]
     )
 

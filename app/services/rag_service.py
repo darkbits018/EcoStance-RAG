@@ -4,11 +4,14 @@ RAG Service - Wrapper for querying knowledge bases.
 from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
 import logging
+import time
 
 from ..models.tenant_knowledge_base import TenantKnowledgeBase
 from ..services.query_service import execute_query, get_retriever, format_docs
 from ..services.qdrant_service import get_qdrant_client
 from ..services.tenant_service import get_tenant_service
+from ..services.llm_tracking_service import LLMTrackingService
+from ..services.cache_service import cache_get, cache_set
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,12 @@ class RAGService:
             Dictionary with answer and sources
         """
         try:
+            # Check cache first (only for queries without chat history)
+            if not chat_history:
+                cached_result = cache_get(tenant_id, kb_id, query, top_k=top_k)
+                if cached_result is not None:
+                    logger.info(f"Cache HIT for query: '{query[:50]}...'")
+                    return cached_result
             # Verify KB exists and belongs to tenant
             kb = self.db.query(TenantKnowledgeBase).filter(
                 TenantKnowledgeBase.tenant_id == tenant_id,
@@ -61,13 +70,35 @@ class RAGService:
             if not tenant_service.collection_exists(collection_name):
                 raise ValueError(f"Collection {collection_name} not found in Qdrant")
 
-            # Execute RAG query
+            # Execute RAG query with tracking
+            start_time = time.time()
             answer = execute_query(
                 collection_name=collection_name,
                 query=query,
                 chat_history=chat_history or [],
                 tenant_id=tenant_id
             )
+            latency_ms = int((time.time() - start_time) * 1000)
+            
+            # Track LLM usage (RAG uses embeddings + LLM for answer generation)
+            try:
+                # Estimate tokens (rough approximation: 1 token ≈ 4 chars)
+                input_tokens = len(query) // 4
+                output_tokens = len(answer) // 4
+                
+                LLMTrackingService.track_llm_call(
+                    db=self.db,
+                    tenant_id=str(tenant_id),
+                    model="text-embedding-3-small",  # Default embedding model
+                    operation_type='rag',
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    success=True,
+                    latency_ms=latency_ms,
+                    endpoint='/api/v1/query'
+                )
+            except Exception as track_error:
+                logger.warning(f"Failed to track LLM usage: {track_error}")
 
             # Get source documents
             retriever = get_retriever(collection_name)
@@ -84,11 +115,18 @@ class RAGService:
                 }
                 sources.append(source_info)
 
-            return {
+            result = {
                 "answer": answer,
                 "sources": sources,
                 "kb_id": kb_id
             }
+            
+            # Cache the result (only for queries without chat history)
+            if not chat_history:
+                cache_set(tenant_id, kb_id, query, result, top_k=top_k)
+                logger.debug(f"Cached result for query: '{query[:50]}...'")
+            
+            return result
 
         except Exception as e:
             logger.error(f"Error querying knowledge base: {str(e)}", exc_info=True)
