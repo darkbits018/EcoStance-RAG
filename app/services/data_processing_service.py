@@ -14,7 +14,7 @@ from .kb_service import add_kb
 embedding_model = load_embedding_model()
 qdrant_client = get_qdrant_client()
 
-def process_and_upload_file(
+async def process_and_upload_file(
     file_path: str, 
     collection_name: str = "default_collection", 
     job_id: str = None,
@@ -42,7 +42,7 @@ def process_and_upload_file(
     try:
         # 1. Extraction Stage
         update_progress("Step 1/5: Starting document extraction...")
-        raw_blocks, _ = extract_data_from_file(file_path)
+        raw_blocks, _ = await extract_data_from_file(file_path)
         update_progress(f"Step 1/5: Extraction complete. Found {len(raw_blocks)} blocks.")
 
         # 2. Cleaning Stage

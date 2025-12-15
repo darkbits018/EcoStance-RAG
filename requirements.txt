@@ -48,3 +48,9 @@ cryptography
 python-jose[cryptography]
 passlib[bcrypt]
 hvac  # HashiCorp Vault client
+
+# Speech-to-Text Dependencies
+openai-whisper  # For Whisper (local STT)
+assemblyai  # For AssemblyAI (cloud STT) - optional
+azure-cognitiveservices-speech  # For Azure Speech - optional
+google-cloud-speech  # For Google Speech-to-Text - optional

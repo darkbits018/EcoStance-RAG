@@ -14,6 +14,9 @@ import logging
 # Import OCR service
 from app.services.ocr_service import extract_text_from_image
 
+# Import STT service
+from app.services.stt_service import stt_service
+
 logger = logging.getLogger(__name__)
 
 # --- OCR Fallback Service ---
@@ -420,6 +423,49 @@ def _extract_text(file_path: str, file_type: str) -> Tuple[List[Dict[str, Any]],
     }]
     return blocks, file_type
 
+# --- Audio Extraction Service ---
+async def _extract_audio(file_path: str, file_type: str) -> Tuple[List[Dict[str, Any]], str]:
+    """
+    Extracts text from audio files using Speech-to-Text (STT) service.
+    
+    Args:
+        file_path (str): The path to the audio file.
+        file_type (str): The type of audio file ('mp3', 'wav', etc.).
+    
+    Returns:
+        A list containing a single block with the transcribed text and metadata.
+    """
+    try:
+        logger.info(f"Starting audio transcription for {file_path}")
+        
+        # Use STT service to transcribe audio
+        transcription_result = await stt_service.transcribe_audio(file_path)
+        
+        if not transcription_result["text"].strip():
+            logger.warning(f"No speech detected in audio file: {file_path}")
+            return [], f"{file_type}-no-speech"
+        
+        # Create a single block with transcribed content
+        blocks = [{
+            "text": transcription_result["text"],
+            "metadata": {
+                "source_filename": os.path.basename(file_path),
+                "original_format": file_type,
+                "transcription_provider": transcription_result["provider"],
+                "language": transcription_result["language"],
+                "confidence": transcription_result["confidence"],
+                "extraction_method": "stt_transcription",
+                "content_type": "audio_transcription"
+            }
+        }]
+        
+        logger.info(f"Audio transcription completed for {file_path}. Provider: {transcription_result['provider']}")
+        return blocks, f"{file_type}-transcribed"
+        
+    except Exception as e:
+        logger.error(f"Error processing audio file {file_path}: {e}")
+        return [], f"{file_type}-error"
+
 
 # --- File Extractor Router ---
 # This dictionary maps file extensions to their corresponding extraction functions.
@@ -435,12 +481,22 @@ FILE_EXTRACTORS = {
     'jsonl': _extract_jsonl,
     'txt': lambda p: _extract_text(p, 'txt'),
     'md': lambda p: _extract_text(p, 'md'),
+    # Audio file types
+    'wav': lambda p: _extract_audio(p, 'wav'),
+    'mp3': lambda p: _extract_audio(p, 'mp3'),
+    'mp4': lambda p: _extract_audio(p, 'mp4'),
+    'm4a': lambda p: _extract_audio(p, 'm4a'),
+    'aac': lambda p: _extract_audio(p, 'aac'),
+    'ogg': lambda p: _extract_audio(p, 'ogg'),
+    'webm': lambda p: _extract_audio(p, 'webm'),
+    'flac': lambda p: _extract_audio(p, 'flac'),
 }
 
 # --- Main Entry Point ---
-def extract_data_from_file(file_path: str) -> Tuple[List[Dict[str, Any]], str]:
+async def extract_data_from_file(file_path: str) -> Tuple[List[Dict[str, Any]], str]:
     """
     Identifies the file type and routes it to the appropriate extraction function.
+    Now supports async extraction for audio files.
 
     Args:
         file_path (str): The path to the file to be processed.
@@ -453,12 +509,19 @@ def extract_data_from_file(file_path: str) -> Tuple[List[Dict[str, Any]], str]:
     _, file_extension = os.path.splitext(file_path)
     file_type = file_extension.lower().strip('.')
 
+    # Define audio file types that require async processing
+    audio_types = {'wav', 'mp3', 'mp4', 'm4a', 'aac', 'ogg', 'webm', 'flac'}
+    
     # Look up the appropriate extractor function from the router dictionary.
     extractor = FILE_EXTRACTORS.get(file_type)
     
     if extractor:
-        # If an extractor is found, call it.
-        blocks, doc_type = extractor(file_path)
+        # If an extractor is found, call it (async for audio, sync for others)
+        if file_type in audio_types:
+            blocks, doc_type = await extractor(file_path)
+        else:
+            blocks, doc_type = extractor(file_path)
+        
         for block in blocks:
             block["metadata"]["doc_type"] = doc_type
         return blocks, doc_type
@@ -469,3 +532,37 @@ def extract_data_from_file(file_path: str) -> Tuple[List[Dict[str, Any]], str]:
         for block in blocks:
             block["metadata"]["doc_type"] = doc_type
         return blocks, doc_type
+
+# Backward compatibility: sync wrapper for non-audio files
+def extract_data_from_file_sync(file_path: str) -> Tuple[List[Dict[str, Any]], str]:
+    """
+    Synchronous wrapper for extract_data_from_file for backward compatibility.
+    Only use this for non-audio files.
+    """
+    import asyncio
+    
+    # Get the file extension to determine the file type.
+    _, file_extension = os.path.splitext(file_path)
+    file_type = file_extension.lower().strip('.')
+    
+    # Define audio file types that require async processing
+    audio_types = {'wav', 'mp3', 'mp4', 'm4a', 'aac', 'ogg', 'webm', 'flac'}
+    
+    if file_type in audio_types:
+        # For audio files, we need to run the async function
+        return asyncio.run(extract_data_from_file(file_path))
+    else:
+        # For non-audio files, we can call the sync version directly
+        extractor = FILE_EXTRACTORS.get(file_type)
+        
+        if extractor:
+            blocks, doc_type = extractor(file_path)
+            for block in blocks:
+                block["metadata"]["doc_type"] = doc_type
+            return blocks, doc_type
+        else:
+            print(f"No specific extractor for file type '{file_type}', using plain text fallback.")
+            blocks, doc_type = _extract_text(file_path, 'unknown')
+            for block in blocks:
+                block["metadata"]["doc_type"] = doc_type
+            return blocks, doc_type

@@ -14,11 +14,11 @@ from sqlalchemy.orm import Session
 
 router = APIRouter()
 
-def background_process_file(job_id: str, file_path: str, collection_name: str, tenant_id: str):
+async def background_process_file(job_id: str, file_path: str, collection_name: str, tenant_id: str):
     """Background task function for file processing with tenant context."""
     try:
         job_tracker.start_job(job_id)
-        process_and_upload_file(file_path, collection_name, job_id, tenant_id=tenant_id)
+        await process_and_upload_file(file_path, collection_name, job_id, tenant_id=tenant_id)
     except Exception as e:
         job_tracker.fail_job(job_id, str(e))
 
