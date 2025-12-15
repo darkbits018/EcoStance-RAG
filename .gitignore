@@ -7,6 +7,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Test files for STT
+test_stt_service.py
+test_audio_processing.py
+reprocess_audio.py
+check_kb_details.py
+
 # Distribution / packaging
 .Python
 build/
