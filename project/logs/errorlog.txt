@@ -1,0 +1,11 @@
+# Error Log File
+
+This file contains application error logs. The original file was too large to display in full.
+
+Key error patterns found:
+- Token verification errors (401 authentication failures)
+- Scheduler service SQL expression errors
+- STT transcription failures (missing whisper package)
+- Audio processing errors
+
+Original file moved from root directory for better organization.
