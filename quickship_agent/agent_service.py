@@ -13,6 +13,15 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from .config import GOOGLE_API_KEY, AGENT_MODEL, AGENT_TEMPERATURE
+
+# Import LangSmith tracing
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from app.services.langsmith_service import trace_agent, trace_llm
+
+# Import LangSmith traceable for proper hierarchy
+from langsmith import traceable
 from .tools.database_tools import (
     get_shipment_status,
     search_shipments_by_customer,
@@ -144,6 +153,11 @@ class AgentService:
         
         return any(indicator in message_lower for indicator in out_of_scope_indicators)
     
+    @traceable(name="llm_call", tags=["llm", "gemini"])
+    def _invoke_llm_with_tracing(self, prompt: str, session_id: str):
+        """Invoke LLM with LangSmith tracing"""
+        return self.llm.invoke([HumanMessage(content=prompt)])
+    
     def _classify_query(self, message: str) -> str:
         """
         Classify query type to determine which tool to use
@@ -182,6 +196,7 @@ class AgentService:
         
         return 'unknown'
     
+    @traceable(name="agent_conversation", tags=["agent", "conversation"])
     def chat(self, session_id: str, message: str, knowledge_base: str = None, database_connection: str = None) -> Dict:
         """
         Process a chat message using ReAct pattern (Reasoning + Acting)
@@ -293,7 +308,7 @@ Examples:
             
             # Track LLM call if db_session is available
             start_time = time.time()
-            analysis_response = self.llm.invoke([HumanMessage(content=analysis_prompt)])
+            analysis_response = self._invoke_llm_with_tracing(analysis_prompt, session_id)
             latency_ms = int((time.time() - start_time) * 1000)
             
             analysis_text = analysis_response.content if hasattr(analysis_response, 'content') else str(analysis_response)

@@ -1,7 +1,7 @@
 import json
 import os
 
-KB_FILE = "kbs.json"
+KB_FILE = "data/config/kbs.json"
 
 def get_all_kbs():
     """

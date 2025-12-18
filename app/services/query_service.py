@@ -9,6 +9,10 @@ import logging
 import time
 
 from app.config import GOOGLE_API_KEY, QDRANT_URL, QDRANT_API_KEY, EMBEDDING_MODEL_NAME
+from .langsmith_service import trace_rag, trace_llm
+
+# Import LangSmith traceable for proper hierarchy
+from langsmith import traceable
 
 # === BEGIN: branch error handling ===
 from ..core.logging import get_logger, log_error_with_context, log_operation_start, log_operation_success, log_operation_failure
@@ -21,6 +25,7 @@ logging.basicConfig(level=logging.INFO) # Ensure basic config is set if not alre
 
 # --- Service Initialization ---
 
+@trace_llm
 def get_llm():
     """
     Initializes and returns the Gemini LLM with optimized settings.
@@ -65,6 +70,7 @@ def get_llm():
         )
     # === END: branch error handling ===
 
+@trace_rag
 def get_retriever(collection_name: str, top_k: int = 5):
     """
     Initializes and returns a Qdrant retriever for a specific collection.
@@ -223,6 +229,7 @@ Provide a helpful, accurate answer based on the context above:"""),
     
     return rag_chain
 
+@traceable(name="rag_pipeline", tags=["rag", "pipeline"])
 def execute_query(collection_name: str, query: str, chat_history: list = None, tenant_id: str = None) -> str:
     """
     Executes a query against the stateful RAG chain with conversation history.

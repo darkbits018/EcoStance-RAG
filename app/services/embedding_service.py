@@ -4,6 +4,8 @@ from typing import List, Dict, Any, Optional
 from threading import Lock
 import logging
 
+from .langsmith_service import trace_embedding
+
 logger = logging.getLogger(__name__)
 
 # Global embedding model instance (singleton pattern)
@@ -11,6 +13,7 @@ _embedding_model: Optional[SentenceTransformer] = None
 _embedding_model_lock = Lock()
 
 
+@trace_embedding
 def load_embedding_model() -> SentenceTransformer:
     """
     Returns a singleton embedding model instance.
@@ -64,6 +67,7 @@ def unload_embedding_model():
                     logger.error(f"Error unloading embedding model: {e}")
 
 # --- Embedding Creation ---
+@trace_embedding
 def create_embeddings(chunks: List[Dict[str, Any]], model: SentenceTransformer) -> List[Dict[str, Any]]:
     """
     Generates vector embeddings for a list of text chunks and attaches them.

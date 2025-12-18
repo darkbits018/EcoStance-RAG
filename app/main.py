@@ -10,6 +10,7 @@ from .middleware.auth_middleware import AuthMiddleware
 from .middleware.rate_limiter import RateLimitMiddleware
 from .middleware.validation_middleware import ValidationMiddleware
 from .middleware.usage_tracking_middleware import UsageTrackingMiddleware
+# LangSmith middleware removed - limiting tracing to embedding, RAG, and agent only
 
 # Import QuickShip AI Agent
 from quickship_agent.router import router as agent_router
@@ -63,7 +64,22 @@ async def lifespan(app: FastAPI):
     # Initialize singletons with graceful error handling
     from .services.qdrant_service import get_qdrant_client
     from .services.embedding_service import load_embedding_model
+    from .services.langsmith_service import langsmith_service
     from .core.logging import log_error_with_context
+    
+    try:
+        # Initialize LangSmith tracing
+        if langsmith_service.is_enabled():
+            logger.info("✓ LangSmith tracing enabled")
+        else:
+            logger.info("ℹ LangSmith tracing disabled")
+    except Exception as e:
+        log_error_with_context(
+            logger=logger,
+            message="Failed to initialize LangSmith service",
+            error=e,
+            remediation="Check LangSmith API key and configuration"
+        )
     
     try:
         # Pre-load Qdrant client
@@ -213,11 +229,12 @@ app.add_middleware(
 )
 
 # === BEGIN: branch error handling ===
-# Add middleware (order matters: request ID -> validation -> rate limiter -> auth -> usage tracking)
+# Add middleware (order matters: request ID -> langsmith -> validation -> rate limiter -> auth -> usage tracking)
 app.add_middleware(UsageTrackingMiddleware)  # Last (logs after response)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(ValidationMiddleware)
+# LangSmith HTTP middleware removed - only tracing embedding, RAG, and agent
 app.add_middleware(RequestIDMiddleware)  # First (sets up request context)
 # === END: branch error handling ===
 

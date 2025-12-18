@@ -35,7 +35,7 @@ def test_ui_flow():
         
         # Check what's in kbs.json
         import json
-        with open("kbs.json", "r") as f:
+        with open("data/config/kbs.json", "r") as f:
             all_kbs = json.load(f)
         print(f"   kbs.json contains: {all_kbs}")
         

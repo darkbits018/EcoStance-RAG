@@ -5,6 +5,7 @@ import logging
 from threading import Lock
 
 from app.config import QDRANT_URL, QDRANT_API_KEY, EMBEDDING_VECTOR_SIZE, DISTANCE_METRIC
+# Database tracing removed - limiting to embedding, RAG, and agent only
 
 logger = logging.getLogger(__name__)
 

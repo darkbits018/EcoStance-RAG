@@ -4,6 +4,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 import logging
 
 from app.services.query_service import execute_query
+# API tracing removed - limiting to embedding, RAG, and agent only
 from app.services.qdrant_service import get_qdrant_client
 from app.services.tenant_service import get_tenant_service
 from app.auth.dependencies import get_current_user
