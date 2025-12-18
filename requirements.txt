@@ -27,15 +27,16 @@ torch
 qdrant-client
 python-dotenv
 
-# LangChain & Google Gemini
-langchain==0.1.16
-langchain-core==0.1.52
-langchain-google-genai==1.0.2
-langchain-qdrant==0.1.1
-langchain-community==0.0.34
+# LangChain & LLM Providers
+langchain>=0.1.16
+langchain-core>=1.2.0
+langchain-google-genai>=1.0.2
+langchain-groq>=1.1.0  # Groq LLM provider
+langchain-qdrant>=0.1.1
+langchain-community>=0.0.34
 
 # LangSmith for tracing and monitoring
-langsmith
+langsmith>=0.5.0
 
 # Database Connectivity
 sqlalchemy

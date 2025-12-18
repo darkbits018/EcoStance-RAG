@@ -35,6 +35,28 @@ from ..schemas.public_agent import (
     FeaturesConfig
 )
 
+# LLM Provider schemas
+from pydantic import BaseModel
+from typing import List, Dict, Any
+
+class LLMProviderInfo(BaseModel):
+    provider: str
+    model: str
+    temperature: float
+    available_providers: Dict[str, Dict[str, Any]]
+
+class LLMProviderSwitchRequest(BaseModel):
+    provider: str
+    model: Optional[str] = None
+
+class LLMProviderSwitchResponse(BaseModel):
+    success: bool
+    message: str
+    previous_provider: Optional[str] = None
+    previous_model: Optional[str] = None
+    current_provider: str
+    current_model: str
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -649,4 +671,109 @@ async def get_session_details(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while fetching session details"
+        )
+
+
+# ============================================================================
+# LLM Provider Management Endpoints (Authentication Required)
+# ============================================================================
+
+@router.get(
+    "/api/v1/admin/agent/llm-provider",
+    response_model=LLMProviderInfo,
+    dependencies=[Depends(require_admin)],
+    tags=["Agent LLM Provider"]
+)
+async def get_current_llm_provider(
+    current_user: TenantUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get current LLM provider information and available providers.
+    
+    Requires admin or super_admin role.
+    """
+    try:
+        from quickship_agent.agent_service import AgentService
+        
+        # Create a temporary agent service to get current info
+        agent = AgentService(tenant_id=current_user["tenant_id"], db_session=db)
+        llm_info = agent.get_current_llm_info()
+        
+        return LLMProviderInfo(**llm_info)
+        
+    except Exception as e:
+        logger.error(f"Error getting LLM provider info: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching LLM provider info: {str(e)}"
+        )
+
+
+@router.post(
+    "/api/v1/admin/agent/llm-provider/switch",
+    response_model=LLMProviderSwitchResponse,
+    dependencies=[Depends(require_admin)],
+    tags=["Agent LLM Provider"]
+)
+async def switch_llm_provider(
+    switch_request: LLMProviderSwitchRequest,
+    current_user: TenantUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Switch to a different LLM provider.
+    
+    Requires admin or super_admin role.
+    """
+    try:
+        from quickship_agent.agent_service import AgentService
+        
+        # Create a temporary agent service to perform the switch
+        agent = AgentService(tenant_id=current_user["tenant_id"], db_session=db)
+        
+        # Perform the switch
+        switch_result = agent.switch_llm_provider(
+            provider=switch_request.provider,
+            model=switch_request.model
+        )
+        
+        return LLMProviderSwitchResponse(**switch_result)
+        
+    except Exception as e:
+        logger.error(f"Error switching LLM provider: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while switching LLM provider: {str(e)}"
+        )
+
+
+@router.get(
+    "/api/v1/admin/agent/llm-provider/available",
+    dependencies=[Depends(require_admin)],
+    tags=["Agent LLM Provider"]
+)
+async def get_available_llm_providers(
+    current_user: TenantUser = Depends(get_current_user)
+):
+    """
+    Get list of available LLM providers and their models.
+    
+    Requires admin or super_admin role.
+    """
+    try:
+        from quickship_agent.llm_factory import LLMFactory
+        
+        providers = LLMFactory.get_available_providers()
+        
+        return {
+            "providers": providers,
+            "current_provider": current_user.get("preferred_llm_provider", "gemini")
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting available LLM providers: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching available providers: {str(e)}"
         )

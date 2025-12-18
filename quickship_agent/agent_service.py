@@ -8,11 +8,11 @@ import json
 import logging
 import time
 from typing import List, Dict, Optional
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-from .config import GOOGLE_API_KEY, AGENT_MODEL, AGENT_TEMPERATURE
+from .config import LLM_PROVIDER, AGENT_MODEL, AGENT_TEMPERATURE, GROQ_MODELS, GEMINI_MODELS
+from .llm_factory import LLMFactory
 
 # Import LangSmith tracing
 import sys
@@ -89,12 +89,28 @@ When you need to use a tool, call it directly and use the result to answer the c
 class AgentService:
     """Service for managing agent conversations with tool calling"""
     
-    def __init__(self, tenant_id: str = None, db_session=None):
-        self.llm = ChatGoogleGenerativeAI(
-            model=AGENT_MODEL,
-            google_api_key=GOOGLE_API_KEY,
-            temperature=AGENT_TEMPERATURE
-        )
+    def __init__(self, tenant_id: str = None, db_session=None, llm_provider: str = None, model: str = None):
+        # Create LLM using factory
+        try:
+            self.llm = LLMFactory.create_llm(
+                provider=llm_provider,
+                model=model,
+                temperature=AGENT_TEMPERATURE
+            )
+            self.current_provider = llm_provider or LLM_PROVIDER
+            self.current_model = model or AGENT_MODEL
+            logger.info(f"Initialized AgentService with {self.current_provider} provider, model: {self.current_model}")
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM: {e}")
+            # Fallback to Gemini if available
+            try:
+                self.llm = LLMFactory.create_llm(provider="gemini")
+                self.current_provider = "gemini"
+                self.current_model = AGENT_MODEL
+                logger.warning("Fell back to Gemini provider")
+            except Exception as fallback_error:
+                logger.error(f"Fallback to Gemini also failed: {fallback_error}")
+                raise ValueError("No LLM provider could be initialized. Please check your API keys.")
         
         self.tenant_id = tenant_id
         self.db_session = db_session  # For LLM tracking
@@ -153,9 +169,11 @@ class AgentService:
         
         return any(indicator in message_lower for indicator in out_of_scope_indicators)
     
-    @traceable(name="llm_call", tags=["llm", "gemini"])
+    @traceable(name="llm_call")
     def _invoke_llm_with_tracing(self, prompt: str, session_id: str):
         """Invoke LLM with LangSmith tracing"""
+        # Add provider-specific tags
+        tags = ["llm", self.current_provider]
         return self.llm.invoke([HumanMessage(content=prompt)])
     
     def _classify_query(self, message: str) -> str:
@@ -509,4 +527,64 @@ Once connected, I'll be able to:
             del self.conversations[session_id]
             return True
         return False
+    
+    def switch_llm_provider(self, provider: str, model: str = None) -> Dict:
+        """
+        Switch to a different LLM provider
+        
+        Args:
+            provider: New provider ('gemini' or 'groq')
+            model: Optional model name. If not provided, uses default for provider
+            
+        Returns:
+            Dict with success status and message
+        """
+        try:
+            # Validate provider configuration
+            is_valid, error_msg = LLMFactory.validate_provider_config(provider)
+            if not is_valid:
+                return {
+                    "success": False,
+                    "message": f"Cannot switch to {provider}: {error_msg}"
+                }
+            
+            # Create new LLM instance
+            old_provider = self.current_provider
+            old_model = self.current_model
+            
+            self.llm = LLMFactory.create_llm(
+                provider=provider,
+                model=model,
+                temperature=AGENT_TEMPERATURE
+            )
+            
+            self.current_provider = provider
+            self.current_model = model or (GROQ_MODELS[0] if provider == "groq" else AGENT_MODEL)
+            
+            logger.info(f"Switched LLM from {old_provider}:{old_model} to {self.current_provider}:{self.current_model}")
+            
+            return {
+                "success": True,
+                "message": f"Successfully switched to {self.current_provider} with model {self.current_model}",
+                "previous_provider": old_provider,
+                "previous_model": old_model,
+                "current_provider": self.current_provider,
+                "current_model": self.current_model
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to switch LLM provider: {e}")
+            return {
+                "success": False,
+                "message": f"Failed to switch to {provider}: {str(e)}"
+            }
+    
+    def get_current_llm_info(self) -> Dict:
+        """Get information about the current LLM configuration"""
+        return {
+            "provider": self.current_provider,
+            "model": self.current_model,
+            "temperature": AGENT_TEMPERATURE,
+            "available_providers": LLMFactory.get_available_providers()
+        }
 

@@ -9,8 +9,14 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# --- LLM Provider Configuration ---
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
+
 # --- Google Gemini API Configuration ---
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# --- Groq API Configuration ---
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # --- Qdrant Configuration (for knowledge base features) ---
 QDRANT_URL = os.getenv("QDRANT_URL")
@@ -27,3 +33,20 @@ QUICKSHIP_DB_PATH = os.getenv("QUICKSHIP_DB_PATH", "QuickShip.db")
 # --- Agent Configuration ---
 AGENT_MODEL = os.getenv("AGENT_MODEL", "gemini-2.5-flash-lite")
 AGENT_TEMPERATURE = float(os.getenv("AGENT_TEMPERATURE", "0.3"))
+
+# --- LLM Provider Model Mappings ---
+GEMINI_MODELS = [
+    "gemini-2.5-flash-lite",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash",
+    "gemini-1.0-pro"
+]
+
+GROQ_MODELS = [
+    "llama-3.1-70b-versatile",
+    "llama-3.1-8b-instant",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it",
+    "llama3-70b-8192",
+    "llama3-8b-8192"
+]
