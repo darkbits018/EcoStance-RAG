@@ -191,46 +191,43 @@ def get_multilingual_model_info() -> Dict[str, Any]:
 # Compatibility functions for existing code
 def should_use_multilingual_embedding(tenant_id: str = None) -> bool:
     """
-    Determine if multilingual embedding should be used for a tenant.
+    Determine if multilingual embedding should be used.
+    Always use multilingual when enabled - BGE-M3 handles all languages including single-language content.
     
     Args:
-        tenant_id: Tenant identifier
+        tenant_id: Tenant identifier (not used - always multilingual when enabled)
         
     Returns:
         True if multilingual embedding should be used
     """
-    if not MULTILINGUAL_ENABLED:
-        return False
-    
-    # Add tenant-specific logic here if needed
-    # For now, use multilingual for all tenants if enabled
-    return True
+    return MULTILINGUAL_ENABLED
 
 def create_embeddings_with_fallback(chunks: List[Dict[str, Any]], tenant_id: str = None) -> List[Dict[str, Any]]:
     """
     Create embeddings with automatic fallback to legacy system.
+    Always use multilingual (BGE-M3) when enabled - handles all content types optimally.
     
     Args:
         chunks: List of data chunks
-        tenant_id: Tenant identifier
+        tenant_id: Tenant identifier (for logging only)
         
     Returns:
         Chunks with embeddings (multilingual or legacy)
     """
     try:
-        # Check if multilingual should be used
-        if should_use_multilingual_embedding(tenant_id):
-            logger.info(f"Using multilingual embeddings for tenant {tenant_id}")
+        # Always use multilingual when enabled
+        if should_use_multilingual_embedding():
+            logger.info(f"Using multilingual embeddings (BGE-M3) - handles all languages optimally")
             return create_multilingual_embeddings(chunks)
         else:
             # Fall back to legacy embedding service
-            logger.info(f"Using legacy embeddings for tenant {tenant_id}")
+            logger.info(f"Using legacy embeddings (multilingual disabled)")
             from .embedding_service import load_embedding_model, create_embeddings
             legacy_model = load_embedding_model()
             return create_embeddings(chunks, legacy_model)
             
     except Exception as e:
-        logger.error(f"Error in embedding creation, falling back to legacy: {e}")
+        logger.error(f"Error in multilingual embedding creation, falling back to legacy: {e}")
         # Always fall back to legacy on error
         from .embedding_service import load_embedding_model, create_embeddings
         legacy_model = load_embedding_model()

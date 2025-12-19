@@ -198,40 +198,36 @@ def get_language_statistics(blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
 def should_use_multilingual_cleaning(tenant_id: str = None) -> bool:
     """
     Determine if multilingual cleaning should be used.
+    Always use enhanced cleaning - provides better language detection for all content.
     
     Args:
-        tenant_id: Tenant identifier
+        tenant_id: Tenant identifier (not used - always enhanced when available)
         
     Returns:
         True if multilingual cleaning should be used
     """
-    # For now, always use multilingual cleaning as it's backward compatible
-    # Can add tenant-specific logic later
+    # Always use enhanced multilingual cleaning - it's backward compatible and better
     return True
 
 def clean_and_enrich_blocks_with_fallback(blocks: List[Dict[str, Any]], 
                                          tenant_id: str = None) -> List[Dict[str, Any]]:
     """
     Clean and enrich blocks with automatic fallback.
+    Always use enhanced cleaning - provides better language detection for all content.
     
     Args:
         blocks: List of data blocks
-        tenant_id: Tenant identifier
+        tenant_id: Tenant identifier (for logging only)
         
     Returns:
         Cleaned and enriched blocks
     """
     try:
-        if should_use_multilingual_cleaning(tenant_id):
-            logger.info(f"Using multilingual cleaning for tenant {tenant_id}")
-            return clean_and_enrich_blocks_multilingual(blocks)
-        else:
-            # Fall back to legacy cleaning
-            logger.info(f"Using legacy cleaning for tenant {tenant_id}")
-            from .cleaning_service import clean_and_enrich_blocks
-            return clean_and_enrich_blocks(blocks)
+        # Always use enhanced multilingual cleaning
+        logger.info(f"Using enhanced multilingual cleaning - better language detection for all content")
+        return clean_and_enrich_blocks_multilingual(blocks)
             
     except Exception as e:
-        logger.error(f"Error in multilingual cleaning, falling back to legacy: {e}")
+        logger.error(f"Error in enhanced cleaning, falling back to legacy: {e}")
         from .cleaning_service import clean_and_enrich_blocks
         return clean_and_enrich_blocks(blocks)

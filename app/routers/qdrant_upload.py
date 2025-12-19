@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Form, HTTPException, BackgroundTasks, Depends, Request
 import os
 
-from ..services.data_processing_service import process_and_upload_file
+from ..services.multilingual_integration_service import process_file_intelligently
 from ..services.job_service import job_tracker
 from ..services.qdrant_service import get_qdrant_client
 from ..services.tenant_service import get_tenant_service
@@ -15,10 +15,16 @@ from sqlalchemy.orm import Session
 router = APIRouter()
 
 async def background_process_file(job_id: str, file_path: str, collection_name: str, tenant_id: str):
-    """Background task function for file processing with tenant context."""
+    """Background task function for file processing with tenant context and multilingual support."""
     try:
         job_tracker.start_job(job_id)
-        await process_and_upload_file(file_path, collection_name, job_id, tenant_id=tenant_id)
+        # Use intelligent processing that automatically selects multilingual or legacy pipeline
+        await process_file_intelligently(
+            file_path=file_path, 
+            collection_name=collection_name, 
+            tenant_id=tenant_id,
+            job_id=job_id
+        )
     except Exception as e:
         job_tracker.fail_job(job_id, str(e))
 

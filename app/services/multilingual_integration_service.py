@@ -37,8 +37,8 @@ class MultilingualIntegrationService:
         return self.initialized and MULTILINGUAL_ENABLED
     
     def get_processing_service(self, tenant_id: str = None):
-        """Get the appropriate processing service for a tenant."""
-        if should_use_multilingual_processing(tenant_id):
+        """Get the appropriate processing service - always use multilingual when available."""
+        if self.is_available():
             from .multilingual_data_processing_service import process_and_upload_file_multilingual
             return process_and_upload_file_multilingual
         else:
@@ -46,8 +46,8 @@ class MultilingualIntegrationService:
             return process_and_upload_file
     
     def get_embedding_service(self, tenant_id: str = None):
-        """Get the appropriate embedding service for a tenant."""
-        if should_use_multilingual_processing(tenant_id):
+        """Get the appropriate embedding service - always use multilingual when available."""
+        if self.is_available():
             from .multilingual_embedding_service import create_embeddings_with_fallback
             return create_embeddings_with_fallback
         else:
@@ -56,8 +56,8 @@ class MultilingualIntegrationService:
             return lambda chunks, tenant_id=None: create_embeddings(chunks, model)
     
     def get_cleaning_service(self, tenant_id: str = None):
-        """Get the appropriate cleaning service for a tenant."""
-        if should_use_multilingual_processing(tenant_id):
+        """Get the appropriate cleaning service - always use multilingual when available."""
+        if self.is_available():
             from .multilingual_cleaning_service import clean_and_enrich_blocks_with_fallback
             return clean_and_enrich_blocks_with_fallback
         else:
@@ -65,8 +65,8 @@ class MultilingualIntegrationService:
             return lambda blocks, tenant_id=None: clean_and_enrich_blocks(blocks)
     
     def get_agent_service(self, tenant_id: str = None, **kwargs):
-        """Get the appropriate agent service for a tenant."""
-        if is_tenant_multilingual_enabled(tenant_id):
+        """Get the appropriate agent service - always use multilingual when available."""
+        if self.is_available():
             try:
                 from quickship_agent.multilingual_agent_service import MultilingualAgentService
                 return MultilingualAgentService(tenant_id=tenant_id, **kwargs)
@@ -79,25 +79,20 @@ class MultilingualIntegrationService:
     
     def process_file_with_best_service(self, file_path: str, collection_name: str, 
                                      tenant_id: str = None, **kwargs):
-        """Process a file using the best available service for the tenant."""
+        """Process a file using the best available service - always multilingual when enabled."""
         processing_service = self.get_processing_service(tenant_id)
         
-        if should_use_multilingual_processing(tenant_id):
-            logger.info(f"Processing file with multilingual pipeline: {file_path}")
-            return processing_service(
-                file_path=file_path,
-                collection_name=collection_name,
-                tenant_id=tenant_id,
-                **kwargs
-            )
+        if self.is_available():
+            logger.info(f"Processing file with multilingual pipeline (BGE-M3): {file_path}")
         else:
             logger.info(f"Processing file with standard pipeline: {file_path}")
-            return processing_service(
-                file_path=file_path,
-                collection_name=collection_name,
-                tenant_id=tenant_id,
-                **kwargs
-            )
+        
+        return processing_service(
+            file_path=file_path,
+            collection_name=collection_name,
+            tenant_id=tenant_id,
+            **kwargs
+        )
     
     def get_tenant_capabilities(self, tenant_id: str) -> Dict[str, Any]:
         """Get multilingual capabilities for a specific tenant."""

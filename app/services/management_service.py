@@ -1,5 +1,5 @@
 from .qdrant_service import get_qdrant_client, delete_collection as delete_qdrant_collection
-from .data_processing_service import process_and_upload_file
+from .multilingual_integration_service import process_file_intelligently
 from .kb_service import get_all_kbs, remove_kb
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 from typing import List, Dict, Any
@@ -126,15 +126,20 @@ def delete_file_from_knowledge_base(collection_name: str, filename: str) -> bool
         logger.error(f"Error deleting file '{filename}' from collection '{collection_name}': {e}")
         return False
 
-def reindex_document(file_path: str, collection_name: str):
+async def reindex_document(file_path: str, collection_name: str, tenant_id: str = None):
     """
     Re-indexes a document by first deleting all its existing points from the
     collection and then running the full processing and upload pipeline again.
+    Now uses intelligent processing with multilingual support.
     """
     client = get_qdrant_client()
     
     # First, delete all existing points for this filename.
     delete_points_by_filename(client, collection_name, file_path)
     
-    # Now, re-process and upload the file.
-    process_and_upload_file(file_path, collection_name)
+    # Now, re-process and upload the file using intelligent processing
+    await process_file_intelligently(
+        file_path=file_path, 
+        collection_name=collection_name,
+        tenant_id=tenant_id
+    )
