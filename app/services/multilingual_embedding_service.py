@@ -1,0 +1,237 @@
+"""
+Multilingual Embedding Service for Document Processing
+Parallel implementation using BGE-M3 for multilingual document embedding
+"""
+
+import torch
+import logging
+from typing import List, Dict, Any, Optional
+from threading import Lock
+import numpy as np
+
+from .langsmith_service import trace_embedding
+
+logger = logging.getLogger(__name__)
+
+# Global multilingual embedding model instance (singleton pattern)
+_multilingual_embedding_model: Optional[Any] = None
+_multilingual_embedding_model_lock = Lock()
+
+# Configuration
+MULTILINGUAL_ENABLED = False  # Will be set from config
+BGE_M3_MODEL_NAME = "BAAI/bge-m3"
+BGE_M3_BATCH_SIZE = 32
+BGE_M3_MAX_LENGTH = 8192
+BGE_M3_NORMALIZE = True
+
+def set_multilingual_config(enabled: bool, model_name: str = None, batch_size: int = None):
+    """Set multilingual configuration from app config."""
+    global MULTILINGUAL_ENABLED, BGE_M3_MODEL_NAME, BGE_M3_BATCH_SIZE
+    MULTILINGUAL_ENABLED = enabled
+    if model_name:
+        BGE_M3_MODEL_NAME = model_name
+    if batch_size:
+        BGE_M3_BATCH_SIZE = batch_size
+
+@trace_embedding
+def load_multilingual_embedding_model():
+    """
+    Load BGE-M3 multilingual embedding model as singleton.
+    
+    Returns:
+        BGE-M3 model instance or None if not available
+    """
+    global _multilingual_embedding_model
+    
+    if not MULTILINGUAL_ENABLED:
+        logger.info("Multilingual embedding disabled, using legacy model")
+        return None
+    
+    # Double-checked locking pattern for thread-safe singleton
+    if _multilingual_embedding_model is None:
+        with _multilingual_embedding_model_lock:
+            if _multilingual_embedding_model is None:
+                try:
+                    from FlagEmbedding import BGEM3FlagModel
+                    
+                    # Determine device
+                    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                    logger.info(f"Loading BGE-M3 multilingual model on device: {device}")
+                    
+                    # Initialize BGE-M3 model
+                    _multilingual_embedding_model = BGEM3FlagModel(
+                        BGE_M3_MODEL_NAME,
+                        use_fp16=device == "cuda",  # Use FP16 on GPU for efficiency
+                        device=device
+                    )
+                    
+                    logger.info("✓ BGE-M3 multilingual embedding model loaded successfully")
+                    
+                except ImportError as e:
+                    logger.error(f"BGE-M3 dependencies not installed: {e}")
+                    logger.info("Install with: pip install FlagEmbedding")
+                    return None
+                except Exception as e:
+                    logger.error(f"Failed to load BGE-M3 model: {e}")
+                    return None
+    
+    return _multilingual_embedding_model
+
+def unload_multilingual_embedding_model():
+    """Unload the multilingual embedding model from memory."""
+    global _multilingual_embedding_model
+    
+    if _multilingual_embedding_model is not None:
+        with _multilingual_embedding_model_lock:
+            if _multilingual_embedding_model is not None:
+                try:
+                    del _multilingual_embedding_model
+                    _multilingual_embedding_model = None
+                    
+                    # Clear CUDA cache if using GPU
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    
+                    logger.info("✓ Multilingual embedding model unloaded successfully")
+                except Exception as e:
+                    logger.error(f"Error unloading multilingual embedding model: {e}")
+
+@trace_embedding
+def create_multilingual_embeddings(chunks: List[Dict[str, Any]], model=None) -> List[Dict[str, Any]]:
+    """
+    Generate multilingual embeddings using BGE-M3.
+    
+    Args:
+        chunks: List of processed data chunks with language metadata
+        model: BGE-M3 model instance (optional, will load if None)
+        
+    Returns:
+        Chunks with multilingual embeddings attached
+    """
+    if not MULTILINGUAL_ENABLED:
+        logger.warning("Multilingual embedding called but not enabled")
+        return chunks
+    
+    if model is None:
+        model = load_multilingual_embedding_model()
+        
+    if model is None:
+        logger.error("Could not load multilingual embedding model")
+        return chunks
+    
+    try:
+        # Extract texts for embedding
+        texts_to_embed = []
+        for chunk in chunks:
+            text = chunk.get('text', '')
+            # Truncate if too long
+            if len(text) > BGE_M3_MAX_LENGTH:
+                text = text[:BGE_M3_MAX_LENGTH]
+            texts_to_embed.append(text)
+        
+        logger.info(f"Creating multilingual embeddings for {len(texts_to_embed)} chunks")
+        
+        # Process in batches
+        all_embeddings = []
+        for i in range(0, len(texts_to_embed), BGE_M3_BATCH_SIZE):
+            batch_texts = texts_to_embed[i:i + BGE_M3_BATCH_SIZE]
+            
+            # Generate embeddings using BGE-M3
+            batch_embeddings = model.encode(
+                batch_texts,
+                batch_size=len(batch_texts),
+                max_length=BGE_M3_MAX_LENGTH
+            )['dense_vecs']
+            
+            # Normalize if requested
+            if BGE_M3_NORMALIZE:
+                norms = np.linalg.norm(batch_embeddings, axis=1, keepdims=True)
+                batch_embeddings = batch_embeddings / norms
+            
+            all_embeddings.extend(batch_embeddings)
+        
+        # Attach embeddings to chunks
+        for chunk, embedding in zip(chunks, all_embeddings):
+            chunk['embedding'] = embedding.tolist()
+            
+            # Add multilingual metadata
+            chunk['metadata'] = chunk.get('metadata', {})
+            chunk['metadata']['embedding_model'] = BGE_M3_MODEL_NAME
+            chunk['metadata']['embedding_type'] = 'multilingual'
+            chunk['metadata']['embedding_dimension'] = len(embedding)
+        
+        logger.info(f"✓ Successfully created multilingual embeddings for {len(chunks)} chunks")
+        return chunks
+        
+    except Exception as e:
+        logger.error(f"Error creating multilingual embeddings: {e}")
+        # Return chunks without embeddings rather than failing
+        return chunks
+
+def get_embedding_dimension() -> int:
+    """Get the embedding dimension for BGE-M3."""
+    return 1024  # BGE-M3 output dimension
+
+def is_multilingual_enabled() -> bool:
+    """Check if multilingual embedding is enabled."""
+    return MULTILINGUAL_ENABLED
+
+def get_multilingual_model_info() -> Dict[str, Any]:
+    """Get information about the multilingual model."""
+    return {
+        "enabled": MULTILINGUAL_ENABLED,
+        "model_name": BGE_M3_MODEL_NAME,
+        "dimension": get_embedding_dimension(),
+        "max_length": BGE_M3_MAX_LENGTH,
+        "batch_size": BGE_M3_BATCH_SIZE,
+        "normalize": BGE_M3_NORMALIZE,
+        "device": "cuda" if torch.cuda.is_available() else "cpu"
+    }
+
+# Compatibility functions for existing code
+def should_use_multilingual_embedding(tenant_id: str = None) -> bool:
+    """
+    Determine if multilingual embedding should be used for a tenant.
+    
+    Args:
+        tenant_id: Tenant identifier
+        
+    Returns:
+        True if multilingual embedding should be used
+    """
+    if not MULTILINGUAL_ENABLED:
+        return False
+    
+    # Add tenant-specific logic here if needed
+    # For now, use multilingual for all tenants if enabled
+    return True
+
+def create_embeddings_with_fallback(chunks: List[Dict[str, Any]], tenant_id: str = None) -> List[Dict[str, Any]]:
+    """
+    Create embeddings with automatic fallback to legacy system.
+    
+    Args:
+        chunks: List of data chunks
+        tenant_id: Tenant identifier
+        
+    Returns:
+        Chunks with embeddings (multilingual or legacy)
+    """
+    try:
+        # Check if multilingual should be used
+        if should_use_multilingual_embedding(tenant_id):
+            logger.info(f"Using multilingual embeddings for tenant {tenant_id}")
+            return create_multilingual_embeddings(chunks)
+        else:
+            # Fall back to legacy embedding service
+            logger.info(f"Using legacy embeddings for tenant {tenant_id}")
+            from .embedding_service import load_embedding_model, create_embeddings
+            legacy_model = load_embedding_model()
+            return create_embeddings(chunks, legacy_model)
+            
+    except Exception as e:
+        logger.error(f"Error in embedding creation, falling back to legacy: {e}")
+        # Always fall back to legacy on error
+        from .embedding_service import load_embedding_model, create_embeddings
+        legacy_model = load_embedding_model()
+        return create_embeddings(chunks, legacy_model)

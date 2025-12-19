@@ -23,6 +23,11 @@ pdf2image
 sentence-transformers
 torch
 
+# Multilingual Embedding Dependencies (BGE-M3)
+FlagEmbedding>=1.2.0  # BGE-M3 multilingual embeddings
+transformers>=4.30.0  # Required for BGE-M3
+numpy>=1.21.0  # Required for embedding operations
+
 # Vector Database
 qdrant-client
 python-dotenv
