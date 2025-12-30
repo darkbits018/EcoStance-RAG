@@ -1,0 +1,13 @@
+# Testing dependencies for multilingual E2E testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+hypothesis>=6.0.0
+httpx>=0.24.0
+PyPDF2>=3.0.0
+numpy>=1.21.0
+
+# Optional dependencies for enhanced testing
+pytest-html>=3.1.0  # HTML test reports
+pytest-cov>=4.0.0   # Coverage reporting
+pytest-xdist>=3.0.0 # Parallel test execution
+pytest-benchmark>=4.0.0  # Performance benchmarking

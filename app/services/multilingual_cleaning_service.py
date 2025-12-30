@@ -209,25 +209,32 @@ def should_use_multilingual_cleaning(tenant_id: str = None) -> bool:
     # Always use enhanced multilingual cleaning - it's backward compatible and better
     return True
 
-def clean_and_enrich_blocks_with_fallback(blocks: List[Dict[str, Any]], 
-                                         tenant_id: str = None) -> List[Dict[str, Any]]:
+def clean_and_enrich_blocks_no_fallback(blocks: List[Dict[str, Any]], 
+                                        tenant_id: str = None) -> List[Dict[str, Any]]:
     """
-    Clean and enrich blocks with automatic fallback.
-    Always use enhanced cleaning - provides better language detection for all content.
+    Clean and enrich blocks using enhanced multilingual processing - no fallback.
     
     Args:
         blocks: List of data blocks
         tenant_id: Tenant identifier (for logging only)
         
     Returns:
-        Cleaned and enriched blocks
+        Cleaned and enriched blocks with multilingual metadata
     """
-    try:
-        # Always use enhanced multilingual cleaning
-        logger.info(f"Using enhanced multilingual cleaning - better language detection for all content")
-        return clean_and_enrich_blocks_multilingual(blocks)
-            
-    except Exception as e:
-        logger.error(f"Error in enhanced cleaning, falling back to legacy: {e}")
-        from .cleaning_service import clean_and_enrich_blocks
-        return clean_and_enrich_blocks(blocks)
+    logger.info(f"Using enhanced multilingual cleaning - better language detection for all content")
+    return clean_and_enrich_blocks_multilingual(blocks)
+
+def clean_and_enrich_blocks_with_fallback(blocks: List[Dict[str, Any]], 
+                                         tenant_id: str = None) -> List[Dict[str, Any]]:
+    """
+    Clean and enrich blocks using multilingual processing only - no fallback.
+    
+    Args:
+        blocks: List of data blocks
+        tenant_id: Tenant identifier (for logging only)
+        
+    Returns:
+        Cleaned and enriched blocks with multilingual metadata
+    """
+    logger.info(f"Using multilingual cleaning only - no fallback")
+    return clean_and_enrich_blocks_multilingual(blocks)

@@ -9,7 +9,12 @@ from langdetect import detect, detect_langs, LangDetectException
 from functools import lru_cache
 import hashlib
 
-from ..config.multilingual_config import (
+# Import multilingual config directly
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
+
+from multilingual_config import (
     LANGUAGE_DETECTION_ENABLED,
     LANGUAGE_DETECTION_MIN_CONFIDENCE,
     LANGUAGE_DETECTION_MIN_TEXT_LENGTH,

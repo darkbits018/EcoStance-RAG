@@ -13,6 +13,7 @@ from ..config.multilingual_config import (
     get_multilingual_collection_name,
     should_use_multilingual_service
 )
+from app.services.tenant_service import TenantService
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +149,7 @@ def create_multilingual_list_tool(tenant_id: str):
             # Filter for tenant-specific collections
             tenant_kbs = []
             multilingual_kbs = []
-            sanitized_tenant = tenant_service._sanitize_name(tenant_id)
+            sanitized_tenant = TenantService._sanitize_name(tenant_id)
             
             for col in collections.collections:
                 # Check for multilingual collections

@@ -27,15 +27,16 @@ def get_multilingual_collection_name(base_collection_name: str, tenant_id: str =
     """
     Generate multilingual collection name.
     
+    Since we're using BGE-M3 for all collections now, no need for _ml suffix.
+    
     Args:
         base_collection_name: Base collection name
         tenant_id: Tenant identifier
         
     Returns:
-        Multilingual collection name with _ml suffix
+        Collection name (no suffix needed)
     """
-    if is_multilingual_enabled() and tenant_id:
-        return f"{base_collection_name}_ml"
+    # No suffix needed - BGE-M3 is the default embedding model
     return base_collection_name
 
 async def process_and_upload_file_multilingual(
@@ -99,13 +100,10 @@ async def process_and_upload_file_multilingual(
         final_chunks = chunk_blocks(enriched_blocks)
         update_progress(f"Step 3/6: Chunking complete. Generated {len(final_chunks)} chunks.")
         
-        # 4. Enhanced Embedding Stage
-        if use_multilingual:
-            update_progress("Step 4/6: Starting multilingual embedding generation (BGE-M3)...")
-            model_info = get_multilingual_model_info()
-            update_progress(f"Using model: {model_info['model_name']} (dimension: {model_info['dimension']})")
-        else:
-            update_progress("Step 4/6: Starting standard embedding generation...")
+        # 4. Multilingual Embedding Stage
+        update_progress("Step 4/6: Starting multilingual embedding generation (BGE-M3)...")
+        model_info = get_multilingual_model_info()
+        update_progress(f"Using model: {model_info['model_name']} (dimension: {model_info['dimension']})")
         
         chunks_with_embeddings = create_embeddings_with_fallback(final_chunks, tenant_id)
         update_progress(f"Step 4/6: Embedding complete. All {len(chunks_with_embeddings)} chunks embedded.")
@@ -116,12 +114,43 @@ async def process_and_upload_file_multilingual(
         # Create collection with appropriate configuration
         if use_multilingual:
             # Use BGE-M3 dimension for multilingual collections
+            from qdrant_client.models import VectorParams, Distance
+            
             vector_size = get_multilingual_model_info()['dimension']
+            update_progress(f"Creating collection with BGE-M3 dimensions: {vector_size}")
+            
+            # Create collection manually with correct dimensions
+            try:
+                # Check if collection exists using list instead of get_collection to avoid Pydantic errors
+                collections = qdrant_client.get_collections()
+                collection_names = [col.name for col in collections.collections]
+                
+                if final_collection_name in collection_names:
+                    update_progress(f"Collection '{final_collection_name}' already exists")
+                else:
+                    update_progress(f"Creating new collection '{final_collection_name}' with {vector_size} dimensions")
+                    qdrant_client.create_collection(
+                        collection_name=final_collection_name,
+                        vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE)
+                    )
+            except Exception as e:
+                update_progress(f"Error with collection setup: {str(e)}")
+                # If we can't check, try to create anyway - it will fail gracefully if it exists
+                try:
+                    update_progress(f"Attempting to create collection '{final_collection_name}' with {vector_size} dimensions")
+                    qdrant_client.create_collection(
+                        collection_name=final_collection_name,
+                        vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE)
+                    )
+                except Exception as create_error:
+                    if "already exists" in str(create_error):
+                        update_progress(f"Collection '{final_collection_name}' already exists (confirmed)")
+                    else:
+                        raise create_error
         else:
-            # Use standard dimension for legacy collections
-            vector_size = 384  # Default for all-MiniLM-L6-v2
+            # Use standard collection creation for legacy
+            create_collection_if_not_exists(qdrant_client, final_collection_name)
         
-        create_collection_if_not_exists(qdrant_client, final_collection_name, vector_size=vector_size)
         add_kb(final_collection_name)
         
         # 6. Upload Stage

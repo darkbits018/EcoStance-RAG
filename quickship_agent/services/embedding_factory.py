@@ -4,8 +4,9 @@ Creates appropriate embedding service based on configuration
 """
 
 import logging
-from typing import Optional, Union
+from typing import Optional, Union, List
 from abc import ABC, abstractmethod
+from langchain_core.embeddings import Embeddings
 
 from ..config.multilingual_config import (
     EMBEDDING_MODEL_TYPE,
@@ -21,8 +22,18 @@ from ..config.multilingual_config import (
 logger = logging.getLogger(__name__)
 
 
-class BaseEmbeddingService(ABC):
-    """Abstract base class for embedding services."""
+class BaseEmbeddingService(Embeddings, ABC):
+    """Abstract base class for embedding services that extends LangChain Embeddings."""
+    
+    @abstractmethod
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Embed search docs."""
+        pass
+    
+    @abstractmethod
+    def embed_query(self, text: str) -> List[float]:
+        """Embed query text."""
+        pass
     
     @abstractmethod
     def encode(self, texts: Union[str, list], **kwargs):
@@ -53,12 +64,20 @@ class LegacyEmbeddingService(BaseEmbeddingService):
         
         logger.info(f"Initialized legacy embedding service: {self.model_name}")
     
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Embed search docs using legacy HuggingFace embeddings."""
+        return self.embeddings.embed_documents(texts)
+    
+    def embed_query(self, text: str) -> List[float]:
+        """Embed query text using legacy HuggingFace embeddings."""
+        return self.embeddings.embed_query(text)
+    
     def encode(self, texts: Union[str, list], **kwargs):
         """Encode using legacy HuggingFace embeddings."""
         if isinstance(texts, str):
-            return self.embeddings.embed_query(texts)
+            return self.embed_query(texts)
         else:
-            return self.embeddings.embed_documents(texts)
+            return self.embed_documents(texts)
     
     def get_dimension(self) -> int:
         return self.dimension
@@ -108,6 +127,22 @@ class BGE_M3EmbeddingService(BaseEmbeddingService):
         except Exception as e:
             logger.error(f"Failed to initialize BGE-M3 model: {e}")
             raise
+    
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Embed search docs using BGE-M3."""
+        embeddings = self.encode(texts)
+        # Convert numpy arrays to lists if needed
+        if hasattr(embeddings[0], 'tolist'):
+            return [emb.tolist() for emb in embeddings]
+        return embeddings
+    
+    def embed_query(self, text: str) -> List[float]:
+        """Embed query text using BGE-M3."""
+        embedding = self.encode(text)
+        # Convert numpy array to list if needed
+        if hasattr(embedding, 'tolist'):
+            return embedding.tolist()
+        return embedding
     
     def encode(self, texts: Union[str, list], **kwargs):
         """

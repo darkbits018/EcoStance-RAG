@@ -39,10 +39,29 @@ AUTO_DETECT_MULTILINGUAL_CONTENT = os.getenv("AUTO_DETECT_MULTILINGUAL_CONTENT",
 MULTILINGUAL_COLLECTION_SUFFIX = "_ml"
 LEGACY_COLLECTION_SUFFIX = ""
 
-# --- Language Support Tiers ---
-TIER_1_LANGUAGES = ["en", "es", "fr", "de", "pt"]  # Full support
-TIER_2_LANGUAGES = ["it", "nl", "ru", "zh", "ja"]  # Basic support
-TIER_3_LANGUAGES = []  # Detection only
+# --- Language Support with BGE-M3 ---
+# BGE-M3 supports 100+ languages with high quality embeddings
+# All languages are supported equally - no artificial tiers needed
+
+# Common languages for reference (BGE-M3 supports many more)
+COMMON_LANGUAGES = [
+    "en", "es", "fr", "de", "pt", "it", "nl", "ru", "zh", "ja", 
+    "ko", "ar", "hi", "th", "vi", "tr", "pl", "cs", "hu", "ro",
+    "bg", "hr", "sk", "sl", "et", "lv", "lt", "fi", "sv", "da",
+    "no", "is", "ga", "mt", "cy", "eu", "ca", "gl", "ast", "an",
+    "oc", "co", "sc", "rm", "fur", "lld", "vec", "lmo", "pms",
+    "lij", "nap", "scn", "srd", "el", "mk", "sr", "bs", "me",
+    "sq", "be", "uk", "kk", "ky", "uz", "tg", "mn", "hy", "ka",
+    "az", "fa", "ps", "ur", "sd", "ne", "si", "my", "km", "lo",
+    "ka", "am", "ti", "om", "so", "sw", "zu", "xh", "af", "st",
+    "tn", "ts", "ve", "nr", "ss", "nso", "yo", "ig", "ha", "ff",
+    "wo", "bm", "ln", "kg", "lua", "rw", "rn", "ny", "sn", "mg"
+]
+
+# Legacy tier definitions (kept for backward compatibility but not used for BGE-M3)
+TIER_1_LANGUAGES = COMMON_LANGUAGES[:20]  # First 20 for compatibility
+TIER_2_LANGUAGES = COMMON_LANGUAGES[20:40]  # Next 20 for compatibility  
+TIER_3_LANGUAGES = []  # BGE-M3 handles all languages equally
 
 # --- Performance Configuration ---
 MULTILINGUAL_CACHE_ENABLED = os.getenv("MULTILINGUAL_CACHE_ENABLED", "true").lower() == "true"
@@ -117,13 +136,12 @@ def get_embedding_dimension(use_multilingual: bool = None) -> int:
         return 384  # Default for all-MiniLM-L6-v2
 
 def get_language_tier(language: str) -> int:
-    """Get the support tier for a language."""
-    if language in TIER_1_LANGUAGES:
-        return 1
-    elif language in TIER_2_LANGUAGES:
-        return 2
-    else:
-        return 3
+    """
+    Get the support tier for a language.
+    With BGE-M3, all languages are supported equally (tier 1).
+    """
+    # BGE-M3 provides high-quality embeddings for all languages
+    return 1  # All languages are tier 1 with BGE-M3
 
 def get_multilingual_config_info() -> dict:
     """Get current multilingual configuration information."""

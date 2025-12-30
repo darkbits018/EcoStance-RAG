@@ -25,7 +25,11 @@ from ..config import (
     QDRANT_URL,
     QDRANT_API_KEY,
     GOOGLE_API_KEY,
-    AGENT_MODEL
+    GROQ_API_KEY,
+    AGENT_MODEL,
+    LLM_PROVIDER,
+    GEMINI_MODELS,
+    GROQ_MODELS
 )
 
 logger = logging.getLogger(__name__)
@@ -38,18 +42,37 @@ class MultilingualRAGService:
         self.embedding_service = get_embedding_service("bge-m3")
         self.language_service = get_language_service()
         
-        # Initialize LLM (reuse existing logic)
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        if not GOOGLE_API_KEY:
-            raise ValueError("GOOGLE_API_KEY must be set for multilingual RAG")
+        # Initialize LLM based on provider configuration
+        self.llm = self._initialize_llm()
         
-        self.llm = ChatGoogleGenerativeAI(
-            model=AGENT_MODEL,
-            google_api_key=GOOGLE_API_KEY,
-            temperature=0.1
-        )
+        logger.info(f"Initialized multilingual RAG service with BGE-M3 and {LLM_PROVIDER} LLM")
+    
+    def _initialize_llm(self):
+        """Initialize the appropriate LLM based on configuration."""
+        if LLM_PROVIDER == "groq":
+            if not GROQ_API_KEY:
+                raise ValueError("GROQ_API_KEY must be set for Groq LLM provider")
+            
+            from langchain_groq import ChatGroq
+            return ChatGroq(
+                model=AGENT_MODEL,
+                groq_api_key=GROQ_API_KEY,
+                temperature=0.1
+            )
         
-        logger.info("Initialized multilingual RAG service with BGE-M3")
+        elif LLM_PROVIDER == "gemini":
+            if not GOOGLE_API_KEY:
+                raise ValueError("GOOGLE_API_KEY must be set for Gemini LLM provider")
+            
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            return ChatGoogleGenerativeAI(
+                model=AGENT_MODEL,
+                google_api_key=GOOGLE_API_KEY,
+                temperature=0.1
+            )
+        
+        else:
+            raise ValueError(f"Unsupported LLM provider: {LLM_PROVIDER}. Supported providers: groq, gemini")
     
     def get_multilingual_retriever(self, collection_name: str, k: int = 5):
         """
@@ -290,16 +313,16 @@ Answer:""")
             # Format documents
             formatted_context = self.format_multilingual_docs(docs)
             
+            # Return all inputs plus new context and question_language
             return {
+                **inputs,  # Pass through original inputs
                 "context": formatted_context,
                 "question_language": question_language
             }
         
         # Create the chain
         rag_chain = (
-            RunnablePassthrough.assign(
-                **RunnableLambda(retrieve_and_format)
-            )
+            RunnableLambda(retrieve_and_format)
             | qa_prompt
             | self.llm
             | StrOutputParser()

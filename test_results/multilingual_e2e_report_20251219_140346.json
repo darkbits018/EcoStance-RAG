@@ -1,0 +1,32 @@
+{
+  "test_run_info": {
+    "start_time": "2025-12-19T14:03:46.006527",
+    "end_time": "2025-12-19T14:03:46.432720",
+    "duration_seconds": 0.426193,
+    "test_framework": "pytest",
+    "multilingual_e2e_version": "1.0.0"
+  },
+  "environment_info": {},
+  "test_categories": {
+    "document_processing": [],
+    "embedding_validation": [],
+    "search_retrieval": [],
+    "rag_pipeline": [],
+    "agent_conversation": [],
+    "api_integration": [],
+    "performance_benchmarks": [],
+    "semantic_accuracy": []
+  },
+  "property_tests": [],
+  "performance_metrics": {},
+  "summary": {
+    "total_tests": 0,
+    "passed_tests": 0,
+    "failed_tests": 0,
+    "skipped_tests": 0,
+    "property_tests": 0,
+    "categories_tested": 0,
+    "performance_metrics_collected": 0,
+    "success_rate": 0.0
+  }
+}

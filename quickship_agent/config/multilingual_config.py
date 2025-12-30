@@ -34,7 +34,7 @@ LANGUAGE_DETECTION_MIN_TEXT_LENGTH = int(os.getenv("LANGUAGE_DETECTION_MIN_TEXT_
 # --- Cross-Language Retrieval Configuration ---
 CROSS_LANGUAGE_ENABLED = os.getenv("CROSS_LANGUAGE_ENABLED", "true").lower() == "true"
 SAME_LANGUAGE_BOOST = float(os.getenv("SAME_LANGUAGE_BOOST", "1.5"))  # Boost factor for same-language results
-CROSS_LANGUAGE_MIN_SIMILARITY = float(os.getenv("CROSS_LANGUAGE_MIN_SIMILARITY", "0.6"))
+CROSS_LANGUAGE_MIN_SIMILARITY = float(os.getenv("CROSS_LANGUAGE_MIN_SIMILARITY", "0.4"))
 MAX_CROSS_LANGUAGE_RESULTS = int(os.getenv("MAX_CROSS_LANGUAGE_RESULTS", "3"))
 
 # --- Language Support Tiers ---

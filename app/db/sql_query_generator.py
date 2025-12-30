@@ -1,4 +1,4 @@
-import google.generativeai as genai
+import google.genai as genai
 import os
 
 class SQLQueryGenerator:
@@ -14,8 +14,10 @@ class SQLQueryGenerator:
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY must be set in environment variables")
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model)
+        
+        # Initialize the client with the new google.genai package
+        self.client = genai.Client(api_key=api_key)
+        self.model_name = model
 
     async def generate_query(self, user_question):
         """
@@ -24,8 +26,12 @@ class SQLQueryGenerator:
         prompt = self._create_prompt(user_question)
         
         try:
-            response = self.model.generate_content(prompt)
-            generated_text = response.text.strip()
+            # Use the new google.genai API
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=[{"parts": [{"text": prompt}]}]
+            )
+            generated_text = response.candidates[0].content.parts[0].text.strip()
             
             sql_query = self._extract_sql_from_response(generated_text)
             explanation = self._extract_explanation(generated_text)

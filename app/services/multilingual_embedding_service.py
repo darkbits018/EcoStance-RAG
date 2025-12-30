@@ -202,33 +202,30 @@ def should_use_multilingual_embedding(tenant_id: str = None) -> bool:
     """
     return MULTILINGUAL_ENABLED
 
-def create_embeddings_with_fallback(chunks: List[Dict[str, Any]], tenant_id: str = None) -> List[Dict[str, Any]]:
+def create_embeddings_no_fallback(chunks: List[Dict[str, Any]], tenant_id: str = None) -> List[Dict[str, Any]]:
     """
-    Create embeddings with automatic fallback to legacy system.
-    Always use multilingual (BGE-M3) when enabled - handles all content types optimally.
+    Create multilingual embeddings using BGE-M3 - no fallback to legacy.
     
     Args:
         chunks: List of data chunks
         tenant_id: Tenant identifier (for logging only)
         
     Returns:
-        Chunks with embeddings (multilingual or legacy)
+        Chunks with BGE-M3 multilingual embeddings
     """
-    try:
-        # Always use multilingual when enabled
-        if should_use_multilingual_embedding():
-            logger.info(f"Using multilingual embeddings (BGE-M3) - handles all languages optimally")
-            return create_multilingual_embeddings(chunks)
-        else:
-            # Fall back to legacy embedding service
-            logger.info(f"Using legacy embeddings (multilingual disabled)")
-            from .embedding_service import load_embedding_model, create_embeddings
-            legacy_model = load_embedding_model()
-            return create_embeddings(chunks, legacy_model)
-            
-    except Exception as e:
-        logger.error(f"Error in multilingual embedding creation, falling back to legacy: {e}")
-        # Always fall back to legacy on error
-        from .embedding_service import load_embedding_model, create_embeddings
-        legacy_model = load_embedding_model()
-        return create_embeddings(chunks, legacy_model)
+    logger.info(f"Using multilingual embeddings (BGE-M3) - handles all languages optimally")
+    return create_multilingual_embeddings(chunks)
+
+def create_embeddings_with_fallback(chunks: List[Dict[str, Any]], tenant_id: str = None) -> List[Dict[str, Any]]:
+    """
+    Create embeddings using BGE-M3 multilingual model only - no fallback.
+    
+    Args:
+        chunks: List of data chunks
+        tenant_id: Tenant identifier (for logging only)
+        
+    Returns:
+        Chunks with BGE-M3 multilingual embeddings
+    """
+    logger.info(f"Using BGE-M3 multilingual embeddings only - no fallback")
+    return create_multilingual_embeddings(chunks)

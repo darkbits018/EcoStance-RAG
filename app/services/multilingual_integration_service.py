@@ -37,55 +37,31 @@ class MultilingualIntegrationService:
         return self.initialized and MULTILINGUAL_ENABLED
     
     def get_processing_service(self, tenant_id: str = None):
-        """Get the appropriate processing service - always use multilingual when available."""
-        if self.is_available():
-            from .multilingual_data_processing_service import process_and_upload_file_multilingual
-            return process_and_upload_file_multilingual
-        else:
-            from .data_processing_service import process_and_upload_file
-            return process_and_upload_file
+        """Get multilingual processing service - no fallback to legacy."""
+        from .multilingual_data_processing_service import process_and_upload_file_multilingual
+        return process_and_upload_file_multilingual
     
     def get_embedding_service(self, tenant_id: str = None):
-        """Get the appropriate embedding service - always use multilingual when available."""
-        if self.is_available():
-            from .multilingual_embedding_service import create_embeddings_with_fallback
-            return create_embeddings_with_fallback
-        else:
-            from .embedding_service import create_embeddings, load_embedding_model
-            model = load_embedding_model()
-            return lambda chunks, tenant_id=None: create_embeddings(chunks, model)
+        """Get multilingual embedding service - no fallback to legacy."""
+        from .multilingual_embedding_service import create_multilingual_embeddings
+        return create_multilingual_embeddings
     
     def get_cleaning_service(self, tenant_id: str = None):
-        """Get the appropriate cleaning service - always use multilingual when available."""
-        if self.is_available():
-            from .multilingual_cleaning_service import clean_and_enrich_blocks_with_fallback
-            return clean_and_enrich_blocks_with_fallback
-        else:
-            from .cleaning_service import clean_and_enrich_blocks
-            return lambda blocks, tenant_id=None: clean_and_enrich_blocks(blocks)
+        """Get multilingual cleaning service - no fallback to legacy."""
+        from .multilingual_cleaning_service import clean_and_enrich_blocks_multilingual
+        return clean_and_enrich_blocks_multilingual
     
     def get_agent_service(self, tenant_id: str = None, **kwargs):
-        """Get the appropriate agent service - always use multilingual when available."""
-        if self.is_available():
-            try:
-                from quickship_agent.multilingual_agent_service import MultilingualAgentService
-                return MultilingualAgentService(tenant_id=tenant_id, **kwargs)
-            except Exception as e:
-                logger.warning(f"Failed to create multilingual agent service: {e}, falling back to legacy")
-        
-        # Fall back to legacy agent service
-        from quickship_agent.agent_service import AgentService
-        return AgentService(tenant_id=tenant_id, **kwargs)
+        """Get multilingual agent service - no fallback to legacy."""
+        from quickship_agent.multilingual_agent_service import MultilingualAgentService
+        return MultilingualAgentService(tenant_id=tenant_id, **kwargs)
     
     def process_file_with_best_service(self, file_path: str, collection_name: str, 
                                      tenant_id: str = None, **kwargs):
-        """Process a file using the best available service - always multilingual when enabled."""
+        """Process a file using multilingual pipeline - no fallback to legacy."""
         processing_service = self.get_processing_service(tenant_id)
         
-        if self.is_available():
-            logger.info(f"Processing file with multilingual pipeline (BGE-M3): {file_path}")
-        else:
-            logger.info(f"Processing file with standard pipeline: {file_path}")
+        logger.info(f"Processing file with multilingual pipeline (BGE-M3): {file_path}")
         
         return processing_service(
             file_path=file_path,
@@ -107,9 +83,9 @@ class MultilingualIntegrationService:
                 "cross_language_search": self.is_available()
             },
             "supported_languages": {
-                "tier_1": ["en", "es", "fr", "de", "pt"],
-                "tier_2": ["it", "nl", "ru", "zh", "ja"],
-                "tier_3": "All languages supported by BGE-M3"
+                "model": "BGE-M3 supports 100+ languages with high-quality embeddings",
+                "common_languages": ["en", "es", "fr", "de", "pt", "it", "nl", "ru", "zh", "ja", "ko", "ar", "hi", "th", "vi", "tr", "pl", "cs", "hu", "ro"],
+                "note": "BGE-M3 provides excellent support for all major world languages and many regional languages"
             }
         }
     

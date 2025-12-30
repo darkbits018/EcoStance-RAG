@@ -10,24 +10,28 @@ from sqlalchemy.orm import Session
 import uuid
 import logging
 
-from .agent_service import AgentService
+from app.services.multilingual_integration_service import get_multilingual_integration_service
 from app.auth.dependencies import get_current_user
 from app.db.database import get_db
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Store agent services per tenant
-_agent_services: Dict[str, AgentService] = {}
+# Store multilingual agent services per tenant
+_agent_services: Dict[str, any] = {}
 
 
-def get_agent_service(tenant_id: str, db: Session = None) -> AgentService:
-    """Get or create an agent service for a tenant"""
+def get_agent_service(tenant_id: str, db: Session = None):
+    """Get or create a multilingual agent service for a tenant"""
     if tenant_id not in _agent_services:
-        _agent_services[tenant_id] = AgentService(tenant_id=tenant_id, db_session=db)
+        integration_service = get_multilingual_integration_service()
+        _agent_services[tenant_id] = integration_service.get_agent_service(
+            tenant_id=tenant_id, 
+            db_session=db
+        )
     else:
         # Update db_session if provided
-        if db:
+        if db and hasattr(_agent_services[tenant_id], 'db_session'):
             _agent_services[tenant_id].db_session = db
     return _agent_services[tenant_id]
 

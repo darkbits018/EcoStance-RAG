@@ -65,9 +65,19 @@ async def create_knowledge_base(
                 detail=f"Knowledge base '{kb_name}' already exists for this tenant"
             )
         
-        # Create the collection
+        # Create the collection with BGE-M3 embedding dimension
         logger.info(f"Creating collection {collection_name}")
-        tenant_service.create_tenant_collection(tenant_id, kb_name)
+        
+        # Always use BGE-M3 multilingual embeddings (1024 dimensions)
+        from app.config.multilingual_app_config import get_embedding_dimension
+        vector_size = get_embedding_dimension(use_multilingual=True)  # 1024 for BGE-M3
+        logger.info(f"Using BGE-M3 embedding dimension: {vector_size}")
+        
+        tenant_service.create_tenant_collection(
+            tenant_id, 
+            kb_name, 
+            vector_size=vector_size
+        )
         logger.info(f"Collection {collection_name} created successfully")
         
         # Add to kbs.json for tracking
@@ -75,13 +85,16 @@ async def create_knowledge_base(
         add_kb(collection_name)
         logger.info(f"Added {collection_name} to kbs.json")
         
-        # Save KB to database
+        # Save KB to database with BGE-M3 embedding model
         from ..models.tenant_knowledge_base import TenantKnowledgeBase
+        from app.config.multilingual_app_config import BGE_M3_MODEL_NAME
+        
         kb_record = TenantKnowledgeBase(
             tenant_id=tenant_id,
             kb_name=kb_name,
             collection_name=collection_name,
-            document_count=0
+            document_count=0,
+            embedding_model=BGE_M3_MODEL_NAME  # Always use BGE-M3
         )
         db.add(kb_record)
         db.commit()
@@ -212,7 +225,89 @@ async def delete_knowledge_base_endpoint(
                 detail=f"Knowledge base '{kb_name}' not found for tenant"
             )
         
-        success = delete_knowledge_base(collection_name)
+        # Delete from all locations: Qdrant, Database, kbs.json
+        success = True
+        errors = []
+        
+        # 1. Delete from Qdrant vector database
+        try:
+            if not tenant_service.delete_tenant_collection(tenant_id, kb_name):
+                errors.append("Failed to delete from vector database")
+                success = False
+        except Exception as e:
+            errors.append(f"Vector database error: {str(e)}")
+            success = False
+        
+        # 2. Delete from database
+        try:
+            from ..models.tenant_knowledge_base import TenantKnowledgeBase
+            kb_record = db.query(TenantKnowledgeBase).filter(
+                TenantKnowledgeBase.tenant_id == tenant_id,
+                TenantKnowledgeBase.kb_name == kb_name
+            ).first()
+            
+            if kb_record:
+                db.delete(kb_record)
+                db.commit()
+            else:
+                errors.append("Knowledge base record not found in database")
+        except Exception as e:
+            errors.append(f"Database error: {str(e)}")
+            success = False
+            db.rollback()
+        
+        # 3. Remove from kbs.json
+        try:
+            from app.services.kb_service import remove_kb
+            remove_kb(collection_name)
+        except Exception as e:
+            errors.append(f"kbs.json error: {str(e)}")
+            success = False
+        
+        # 4. Clean up from public chat and agent configs
+        try:
+            from ..models.public_chat import PublicChatConfig
+            from ..models.public_agent import PublicAgentConfig
+            import json
+            
+            # Clean up public chat config
+            chat_config = db.query(PublicChatConfig).filter(
+                PublicChatConfig.tenant_id == tenant_id
+            ).first()
+            
+            if chat_config:
+                allowed_kbs = json.loads(chat_config.allowed_kbs) if isinstance(chat_config.allowed_kbs, str) else chat_config.allowed_kbs
+                if kb_name in allowed_kbs:
+                    allowed_kbs.remove(kb_name)
+                    chat_config.allowed_kbs = json.dumps(allowed_kbs)
+                    db.commit()
+            
+            # Clean up public agent config
+            agent_config = db.query(PublicAgentConfig).filter(
+                PublicAgentConfig.tenant_id == tenant_id
+            ).first()
+            
+            if agent_config:
+                allowed_kbs = json.loads(agent_config.allowed_kbs) if isinstance(agent_config.allowed_kbs, str) else agent_config.allowed_kbs
+                if kb_name in allowed_kbs:
+                    allowed_kbs.remove(kb_name)
+                    agent_config.allowed_kbs = json.dumps(allowed_kbs)
+                    db.commit()
+                    
+        except Exception as e:
+            errors.append(f"Config cleanup warning: {str(e)}")
+        
+        # 5. Clean up uploaded files for this KB
+        try:
+            import os
+            import shutil
+            kb_upload_dir = os.path.join("uploads", tenant_id, kb_name)
+            if os.path.exists(kb_upload_dir):
+                shutil.rmtree(kb_upload_dir)
+        except Exception as e:
+            # Don't fail the deletion if file cleanup fails
+            errors.append(f"File cleanup warning: {str(e)}")
+        
         if success:
             # Log successful deletion
             audit = AuditService(db)
@@ -228,7 +323,8 @@ async def delete_knowledge_base_endpoint(
             )
             return {"message": f"Knowledge base '{kb_name}' deleted successfully."}
         else:
-            raise HTTPException(status_code=500, detail=f"Failed to delete knowledge base '{kb_name}'.")
+            error_msg = f"Partial deletion failure: {'; '.join(errors)}"
+            raise HTTPException(status_code=500, detail=error_msg)
     except HTTPException:
         raise
     except Exception as e:
@@ -330,6 +426,51 @@ async def get_knowledge_base_files_endpoint(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get knowledge base files: {e}")
+
+@router.get("/knowledge-bases/{kb_name}/files/{filename}/details")
+async def get_file_details_endpoint(
+    kb_name: str,
+    filename: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get detailed information about a specific file in a knowledge base.
+    
+    Requires: KB_VIEW permission
+    """
+    tenant_id = current_user["tenant_id"]
+    user_id = current_user["user_id"]
+    
+    # Check permission
+    rbac = RBACService(db)
+    rbac.require_permission(tenant_id, user_id, Permission.KB_VIEW)
+    
+    try:
+        # Generate tenant-specific collection name
+        qdrant_client = get_qdrant_client()
+        tenant_service = get_tenant_service(qdrant_client)
+        collection_name = tenant_service.get_collection_name(tenant_id, kb_name)
+        
+        # Verify collection exists
+        if not tenant_service.collection_exists(collection_name):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Knowledge base '{kb_name}' not found for tenant"
+            )
+        
+        from app.services.management_service import get_file_details
+        details = get_file_details(collection_name, filename)
+        
+        if 'error' in details:
+            raise HTTPException(status_code=404, detail=details['error'])
+        
+        return details
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get file details: {e}")
 
 @router.delete("/knowledge-bases/{kb_name}/files/{filename}")
 async def delete_file_endpoint(

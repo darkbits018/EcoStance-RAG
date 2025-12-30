@@ -3,7 +3,7 @@ from typing import List
 from langchain_core.messages import HumanMessage, AIMessage
 import logging
 
-from app.services.query_service import execute_query
+from app.services.multilingual_integration_service import get_multilingual_integration_service
 # API tracing removed - limiting to embedding, RAG, and agent only
 from app.services.qdrant_service import get_qdrant_client
 from app.services.tenant_service import get_tenant_service
@@ -67,9 +67,44 @@ async def query_collection(
             else:
                 processed_chat_history.append(AIMessage(content=message))
 
-        logger.info("Executing query...")
-        answer = execute_query(collection_name, query, processed_chat_history, tenant_id=tenant_id)
-        logger.info(f"Query executed successfully. Answer: {answer}")
+        logger.info("Executing multilingual query...")
+        
+        # Use multilingual RAG service
+        integration_service = get_multilingual_integration_service()
+        
+        # Check if collection has multilingual suffix, if not try both
+        multilingual_collection = f"{collection_name}_ml"
+        
+        # Try multilingual collection first, fallback to legacy collection name
+        try:
+            from quickship_agent.services.multilingual_rag_service import get_multilingual_rag_service
+            rag_service = get_multilingual_rag_service()
+            
+            if rag_service.check_collection_exists(multilingual_collection):
+                logger.info(f"Using multilingual collection: {multilingual_collection}")
+                answer = rag_service.execute_multilingual_query(
+                    collection_name=multilingual_collection,
+                    query=query,
+                    chat_history=processed_chat_history
+                )
+            elif rag_service.check_collection_exists(collection_name):
+                logger.info(f"Using legacy collection with multilingual RAG: {collection_name}")
+                answer = rag_service.execute_multilingual_query(
+                    collection_name=collection_name,
+                    query=query,
+                    chat_history=processed_chat_history
+                )
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Neither multilingual nor legacy collection found for '{kb_name}'"
+                )
+                
+        except Exception as e:
+            logger.error(f"Multilingual query failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
+        
+        logger.info(f"Multilingual query executed successfully. Answer: {answer}")
         
         # Log successful query
         audit = AuditService(db)

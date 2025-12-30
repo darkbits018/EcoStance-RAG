@@ -1,0 +1,78 @@
+{
+  "test_run_info": {
+    "start_time": "2025-12-19T14:33:21.698542",
+    "end_time": "2025-12-19T14:33:36.038504",
+    "duration_seconds": 14.339962,
+    "test_framework": "pytest",
+    "multilingual_e2e_version": "1.0.0"
+  },
+  "environment_info": {
+    "python_version": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+    "platform": "Windows-11-10.0.22631-SP0",
+    "architecture": [
+      "64bit",
+      "WindowsPE"
+    ],
+    "processor": "Intel64 Family 6 Model 141 Stepping 1, GenuineIntel",
+    "multilingual_config": {
+      "multilingual_enabled": true,
+      "processing_enabled": true,
+      "embedding_model_type": "huggingface",
+      "bge_m3_config": {
+        "model_name": "BAAI/bge-m3",
+        "dimension": 1024,
+        "max_length": 8192,
+        "batch_size": 32,
+        "normalize": true,
+        "device": "auto"
+      },
+      "language_support": {
+        "tier_1": [
+          "en",
+          "es",
+          "fr",
+          "de",
+          "pt"
+        ],
+        "tier_2": [
+          "it",
+          "nl",
+          "ru",
+          "zh",
+          "ja"
+        ],
+        "detection_enabled": true,
+        "min_confidence": 0.7
+      },
+      "tenant_whitelist": [],
+      "collection_suffix": "_ml",
+      "fallback_enabled": true
+    },
+    "test_environment": {
+      "pdf_file": "logistics-multilanguage.pdf",
+      "test_tenant": "test_multilingual_tenant"
+    }
+  },
+  "test_categories": {
+    "document_processing": [],
+    "embedding_validation": [],
+    "search_retrieval": [],
+    "rag_pipeline": [],
+    "agent_conversation": [],
+    "api_integration": [],
+    "performance_benchmarks": [],
+    "semantic_accuracy": []
+  },
+  "property_tests": [],
+  "performance_metrics": {},
+  "summary": {
+    "total_tests": 0,
+    "passed_tests": 0,
+    "failed_tests": 0,
+    "skipped_tests": 0,
+    "property_tests": 0,
+    "categories_tested": 0,
+    "performance_metrics_collected": 0,
+    "success_rate": 0.0
+  }
+}

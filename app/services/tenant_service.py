@@ -48,15 +48,16 @@ class TenantService:
             "tenant_acme-corp_docs"
         """
         # Sanitize names to ensure valid collection names
-        safe_tenant_id = self._sanitize_name(tenant_id)
-        safe_kb_name = self._sanitize_name(kb_name)
+        safe_tenant_id = TenantService._sanitize_name(tenant_id)
+        safe_kb_name = TenantService._sanitize_name(kb_name)
         
         collection_name = f"{self.COLLECTION_PREFIX}{self.SEPARATOR}{safe_tenant_id}{self.SEPARATOR}{safe_kb_name}"
         
         logger.debug(f"Generated collection name: {collection_name}")
         return collection_name
     
-    def _sanitize_name(self, name: str) -> str:
+    @staticmethod
+    def _sanitize_name(name: str) -> str:
         """
         Sanitize name for use in collection names.
         Replaces invalid characters with underscores.
@@ -219,7 +220,7 @@ class TenantService:
         """
         try:
             all_collections = self.client.get_collections()
-            tenant_prefix = f"{self.COLLECTION_PREFIX}{self.SEPARATOR}{self._sanitize_name(tenant_id)}{self.SEPARATOR}"
+            tenant_prefix = f"{self.COLLECTION_PREFIX}{self.SEPARATOR}{TenantService._sanitize_name(tenant_id)}{self.SEPARATOR}"
             
             tenant_collections = []
             
@@ -227,7 +228,7 @@ class TenantService:
                 if collection.name.startswith(tenant_prefix):
                     parsed = self.parse_collection_name(collection.name)
                     
-                    if parsed and parsed["tenant_id"] == self._sanitize_name(tenant_id):
+                    if parsed and parsed["tenant_id"] == TenantService._sanitize_name(tenant_id):
                         # Get collection details
                         try:
                             info = self.client.get_collection(collection_name=collection.name)
@@ -258,10 +259,10 @@ class TenantService:
             True if collection exists, False otherwise
         """
         try:
-            self.client.get_collection(collection_name=collection_name)
-            return True
-        except UnexpectedResponse:
-            return False
+            # Use list collections instead of get_collection to avoid Pydantic validation issues
+            collections = self.client.get_collections()
+            collection_names = [col.name for col in collections.collections]
+            return collection_name in collection_names
         except Exception as e:
             logger.error(f"Error checking collection existence: {e}")
             return False
@@ -316,7 +317,7 @@ class TenantService:
         if not parsed:
             return False
         
-        return parsed["tenant_id"] == self._sanitize_name(tenant_id)
+        return parsed["tenant_id"] == TenantService._sanitize_name(tenant_id)
 
 
 # Global instance (will be initialized with client)
