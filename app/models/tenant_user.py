@@ -21,11 +21,15 @@ class TenantUser(Base):
     
     # User information
     email = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=True)  # Hashed password for authentication
     full_name = Column(String(255))
     
-    # Role and permissions
-    role = Column(String(50), nullable=False, default="user")
-    # Roles: owner, admin, manager, user, viewer
+    # Enhanced role system
+    system_role = Column(String(50), nullable=True)  # "super_admin" or "tenant_admin"
+    tenant_role_id = Column(String(36), ForeignKey("tenant_roles.id"), nullable=True)
+    
+    # Legacy role field (kept for backward compatibility during migration)
+    role = Column(String(50), nullable=True, default="user")  # Will be deprecated
     
     # Status
     is_active = Column(Boolean, default=True, nullable=False)
@@ -37,6 +41,7 @@ class TenantUser(Base):
     
     # Relationships
     tenant = relationship("Tenant", back_populates="users")
+    tenant_role = relationship("TenantRole", foreign_keys=[tenant_role_id], back_populates="users")
     
     def __repr__(self):
         return f"<TenantUser(id={self.id}, tenant_id={self.tenant_id}, user_id={self.user_id}, role={self.role})>"
@@ -49,7 +54,9 @@ class TenantUser(Base):
             "user_id": self.user_id,
             "email": self.email,
             "full_name": self.full_name,
-            "role": self.role,
+            "system_role": self.system_role,
+            "tenant_role_id": self.tenant_role_id,
+            "role": self.role,  # Legacy field
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

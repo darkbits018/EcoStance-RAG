@@ -15,7 +15,9 @@ import shutil
 
 from ..db.database import get_db
 from ..models.tenant import Tenant
+from ..models.tenant_user import TenantUser
 from ..auth.dependencies import get_tenant_id
+from ..auth.permissions import SystemRole
 from ..schemas.tenant import TenantProfileUpdate, NotificationPreferences, TenantResponse
 
 router = APIRouter()
@@ -83,6 +85,7 @@ async def register_tenant(
     """
     Self-service tenant registration endpoint.
     Creates a new tenant account with email and password.
+    Automatically creates a TenantUser record and assigns tenant_admin role.
     """
     # Check if email already exists
     existing_email = db.query(Tenant).filter(Tenant.email == request.email).first()
@@ -127,6 +130,22 @@ async def register_tenant(
     )
     
     db.add(tenant)
+    db.flush()  # Flush to get the tenant ID
+    
+    # Create TenantUser record for the registering user
+    user_id = str(uuid.uuid4())
+    tenant_user = TenantUser(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant.id,
+        user_id=user_id,
+        email=request.email,
+        full_name=request.name,  # Use tenant name as user name for now
+        system_role=SystemRole.TENANT_ADMIN.value,  # Assign tenant_admin role
+        is_active=True,
+        created_at=datetime.utcnow()
+    )
+    
+    db.add(tenant_user)
     db.commit()
     db.refresh(tenant)
     

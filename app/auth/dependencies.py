@@ -232,10 +232,25 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tenant account is inactive or suspended"
         )
+
+    # Get the internal TenantUser ID
+    tenant_user_id = None
+    if user_id and user_id != "system":
+        # Import here to avoid circular dependencies
+        from ..models.tenant_user import TenantUser
+        
+        tenant_user = db.query(TenantUser).filter(
+            TenantUser.tenant_id == tenant_id,
+            TenantUser.user_id == user_id
+        ).first()
+        
+        if tenant_user:
+            tenant_user_id = tenant_user.id
     
     return {
         "tenant_id": tenant_id,
-        "user_id": user_id,
+        "user_id": user_id,  # Global Auth ID
+        "tenant_user_id": tenant_user_id,  # Internal Database PK
         "tenant": tenant
     }
 

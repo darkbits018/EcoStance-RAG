@@ -73,26 +73,32 @@ async def login(
     tenant = None
     
     # Method 1: Email + Password authentication
+    # Method 1: Email + Password authentication
     if request.email and request.password:
         try:
-            # Find tenant by email
+            # First try finding a Tenant account (Tenant Admin)
             tenant = db.query(Tenant).filter(Tenant.email == request.email).first()
-            
+            authenticated_user = None
+            is_tenant_admin_account = False
+
+            if tenant:
+                # Verify tenant password
+                if tenant.password_hash and bcrypt.checkpw(request.password.encode('utf-8'), tenant.password_hash.encode('utf-8')):
+                     is_tenant_admin_account = True
+                else:
+                    tenant = None # Invalid password for tenant account
+
+            # If not authenticated as Tenant account, try finding a TenantUser
             if not tenant:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid email or password"
-                )
-            
-            # Verify password
-            if not tenant.password_hash:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Password not set for this account. Please use tenant_id login or reset password."
-                )
-            
-            # Check password
-            if not bcrypt.checkpw(request.password.encode('utf-8'), tenant.password_hash.encode('utf-8')):
+                tenant_user = db.query(TenantUser).filter(TenantUser.email == request.email).first()
+                if tenant_user:
+                     if tenant_user.password_hash and bcrypt.checkpw(request.password.encode('utf-8'), tenant_user.password_hash.encode('utf-8')):
+                         # Authenticated as TenantUser!
+                         # Retrieve the associated Tenant
+                         tenant = db.query(Tenant).filter(Tenant.id == tenant_user.tenant_id).first()
+                         authenticated_user = tenant_user
+                     
+            if not tenant:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid email or password"
@@ -105,7 +111,14 @@ async def login(
                     detail="Tenant account is inactive"
                 )
             
-            logger.info(f"Successful email/password login for tenant: {tenant.id}")
+            # Additional check for TenantUser active status
+            if authenticated_user and not authenticated_user.is_active:
+                 raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User account is inactive"
+                )
+
+            logger.info(f"Successful login for tenant: {tenant.id} (User: {authenticated_user.email if authenticated_user else 'Tenant Admin'})")
             
         except HTTPException:
             raise
@@ -156,10 +169,31 @@ async def login(
         )
     
     # Create token data
-    user_id = request.user_id or request.email or tenant.id
+    # Determine user_id:
+    # 1. If we found a specific authenticated_user logic above, use it. (But authenticated_user variable is local to that block)
+    # We need to ensure 'authenticated_user' is accessible here or re-fetch logic is clean.
     
-    # Fetch user role from tenant_users table
+    # Re-evaluating scope: 'authenticated_user' was defined in the try block. 
+    # Let's initialize it before if/else for safety or check 'request.email'.
+    # Actually, the 'login' function continues below.
+    # The simplest way is to fetch the user again if we are in 'TenantUser' mode, OR
+    # just look up by email again which is what the current code does below anyway!
+    
+    # Current code below:
+    # user_id = request.user_id or request.email or tenant.id
+    # email_to_check = request.email or getattr(tenant, 'email', None)
+    
+    # The existing logic below (lines 161+) attempts to find the TenantUser to get the role.
+    # We should let it do its job, BUT we need to make sure 'user_id' is set correctly.
+    # If we logged in as a TenantUser, user_id should be that user's ID (which is in tenant_users.user_id).
+    
+    # Let's modify the lookup below to also grab the ID if we haven't set it explicitly.
+    
+    user_id = request.user_id or (getattr(tenant, 'id') if tenant else None) # Default
+    
+    # Fetch user role from tenant_users table (Enhanced for Better RBAC)
     user_role = None
+    system_role = None
     email_to_check = request.email or getattr(tenant, 'email', None)
     try:
         if email_to_check:
@@ -168,11 +202,20 @@ async def login(
                 TenantUser.email == email_to_check
             ).first()
             if tenant_user:
-                user_role = tenant_user.role
+                # Check for system role first (Better RBAC)
+                if tenant_user.system_role:
+                    system_role = tenant_user.system_role
+                    user_role = tenant_user.system_role  # Use system role as primary role
+                elif tenant_user.tenant_role_id and tenant_user.tenant_role:
+                    user_role = f"tenant_role:{tenant_user.tenant_role.name}"
+                elif tenant_user.role:
+                    user_role = tenant_user.role  # Legacy role fallback
+                
                 user_id = tenant_user.user_id  # Use the actual user_id from tenant_users
-                logger.info(f"Found user with role: {user_role}")
+                logger.info(f"Found user with system_role: {system_role}, role: {user_role}")
             else:
-                logger.warning(f"No tenant_user found for email: {email_to_check}")
+                if not request.tenant_id: # If not dev-mode login
+                     logger.warning(f"No tenant_user found for email: {email_to_check}")
     except Exception as e:
         logger.error(f"Could not fetch user role: {e}", exc_info=True)
     

@@ -15,6 +15,7 @@ from . import quota_router
 from . import metrics_router
 from . import public_chat_router
 from . import public_agent_router
+from . import tenant_users
 
 __all__ = [
     "upload",
@@ -30,5 +31,6 @@ __all__ = [
     "quota_router",
     "metrics_router",
     "public_chat_router",
-    "public_agent_router"
+    "public_agent_router",
+    "tenant_users"
 ]
