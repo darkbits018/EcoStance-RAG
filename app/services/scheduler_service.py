@@ -16,6 +16,11 @@ from app.services.alerting_service import AlertingService
 from app.config import QDRANT_URL, QDRANT_API_KEY
 from qdrant_client import QdrantClient
 
+from app.models.gmail import GmailSchedule, GmailRecipient, GmailExecutionLog
+from app.services.gmail_auth_service import GmailAuthService
+from app.services.gmail_fetch_service import GmailFetchService
+from app.services.gmail_rag_service import GmailRAGService
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,11 +56,17 @@ class SchedulerService:
         last_hourly = datetime.utcnow()
         last_daily = datetime.utcnow()
         last_monthly = datetime.utcnow()
+        last_gmail_check = datetime.utcnow() - timedelta(minutes=1) # Run immediately on start
         
         while self.running:
             try:
                 now = datetime.utcnow()
                 
+                # Run Gmail tasks (every minute)
+                if (now - last_gmail_check).total_seconds() >= 60:
+                    self._run_gmail_tasks()
+                    last_gmail_check = now
+
                 # Run hourly tasks (every hour)
                 if (now - last_hourly).total_seconds() >= 3600:
                     self._run_hourly_tasks()
@@ -71,13 +82,132 @@ class SchedulerService:
                     self._run_monthly_tasks()
                     last_monthly = now
                 
-                # Sleep for 5 minutes before next check
-                time.sleep(300)
+                # Sleep for small interval to prevent high CPU usage, but keep responsive
+                time.sleep(10)
                 
             except Exception as e:
                 logger.error(f"Error in scheduler loop: {e}")
                 time.sleep(60)  # Wait a minute before retrying
-    
+
+    def _run_gmail_tasks(self):
+        """Check for and execute due Gmail sync schedules."""
+        db = SessionLocal()
+        try:
+            now = datetime.utcnow()
+            # Find enabled schedules that are due (next_run <= now OR next_run is null)
+            # Default to running now if next_run is null (freshly created schedules usually set next_run, but safety check)
+            due_schedules = db.query(GmailSchedule).filter(
+                GmailSchedule.enabled == True,
+                (GmailSchedule.next_run <= now) | (GmailSchedule.next_run == None)
+            ).all()
+
+            if due_schedules:
+                logger.info(f"Found {len(due_schedules)} due Gmail schedules")
+
+            for schedule in due_schedules:
+                self._execute_gmail_schedule(db, schedule)
+
+        except Exception as e:
+            logger.error(f"Error checking Gmail tasks: {e}")
+        finally:
+            db.close()
+
+    def execute_schedule_now(self, db: Session, schedule: GmailSchedule):
+        """Manually trigger the execution of a Gmail schedule."""
+        self._execute_gmail_schedule(db, schedule)
+
+    def _execute_gmail_schedule(self, db: Session, schedule: GmailSchedule):
+        """Execute a single Gmail sync schedule."""
+        log = GmailExecutionLog(
+            tenant_id=schedule.tenant_id,
+            schedule_id=schedule.id,
+            execution_type='scheduled',
+            status='running',
+            start_time=datetime.utcnow()
+        )
+        db.add(log)
+        db.commit() # Save 'running' state
+        
+        try:
+            logger.info(f"Executing Gmail schedule {schedule.name} ({schedule.id}) for tenant {schedule.tenant_id}")
+            
+            # 1. Authenticate
+            auth_service = GmailAuthService(db)
+            creds = auth_service.get_credentials(schedule.tenant_id)
+            
+            if not creds:
+                raise ValueError("Gmail credentials not found or invalid for tenant")
+
+            # 2. Setup Services
+            fetch_service = GmailFetchService(creds)
+            rag_service = GmailRAGService(db, schedule.tenant_id)
+            
+            total_processed = 0
+            
+            # 3. Process each recipient
+            recipient_ids = schedule.recipient_ids or []
+            for recipient_id in recipient_ids:
+                recipient = db.query(GmailRecipient).filter(
+                    GmailRecipient.id == recipient_id,
+                    GmailRecipient.enabled == True
+                ).first()
+                
+                if not recipient:
+                    continue
+                
+                # Build query (e.g., "from:user@example.com is:unread")
+                # Using simple filter for now. Can be enhanced with schedule config (e.g., newer_than:2d)
+                query = f"from:{recipient.email_address}"
+                if recipient.filters:
+                    # Append custom filters if any
+                    # This is rudimentary; implies filters dict has a 'query_string' or similar
+                    # For MVP, let's just use email address
+                    pass
+                
+                # Fetch
+                emails = fetch_service.fetch_emails(query=query, max_results=20) # Limit for safety in MVP
+                
+                # RAG Process
+                count = rag_service.process_emails_to_kb(emails)
+                total_processed += count
+                
+            # 4. Update Log & Schedule
+            log.status = 'success'
+            log.emails_processed = total_processed
+            
+            # Update next_run based on schedule_type
+            self._update_next_run(schedule)
+
+        except Exception as e:
+            logger.error(f"Gmail execution failed for schedule {schedule.id}: {e}")
+            log.status = 'failed'
+            log.errors = {"error": str(e)}
+            # Still update next run to avoid infinite retry loop
+            self._update_next_run(schedule)
+            
+        finally:
+            log.end_time = datetime.utcnow()
+            if log.start_time:
+                 log.duration_ms = int((log.end_time - log.start_time).total_seconds() * 1000)
+            db.commit()
+
+    def _update_next_run(self, schedule: GmailSchedule):
+        """Calculate and update the next run time for a schedule."""
+        now = datetime.utcnow()
+        if schedule.schedule_type == 'interval':
+            minutes = int(schedule.schedule_config.get('minutes', 60))
+            schedule.next_run = now + timedelta(minutes=minutes)
+        elif schedule.schedule_type == 'daily':
+            # Run same time tomorrow
+            # Simplification: just add 24 hours to current execution time
+            schedule.next_run = now + timedelta(days=1)
+        # Add other types as needed
+        else:
+            # Default fallback
+            schedule.next_run = now + timedelta(hours=1)
+            
+        schedule.last_run = now
+
     def _run_hourly_tasks(self):
         """Run tasks that should execute every hour."""
         logger.info("Running hourly tasks")

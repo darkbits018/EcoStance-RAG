@@ -1,3 +1,4 @@
+import os
 from sentence_transformers import SentenceTransformer
 import torch
 from typing import List, Dict, Any, Optional
@@ -36,8 +37,10 @@ def load_embedding_model() -> SentenceTransformer:
                 device = 'cuda' if torch.cuda.is_available() else 'cpu'
                 logger.info(f"Loading embedding model singleton on device: {device}")
                 
-                # Load a pre-trained model. 'all-MiniLM-L6-v2' is a great all-rounder.
-                _embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+                # Load a pre-trained model.
+                model_name = os.getenv('EMBEDDING_MODEL_NAME', 'BAAI/bge-m3')
+                logger.info(f"Using embedding model: {model_name}")
+                _embedding_model = SentenceTransformer(model_name, device=device)
                 
                 logger.info("✓ Embedding model singleton loaded successfully")
     

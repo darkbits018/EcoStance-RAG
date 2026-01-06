@@ -87,12 +87,14 @@ class MultilingualRAGService:
         """
         try:
             # Create Qdrant store with BGE-M3 embeddings
+            from qdrant_client import QdrantClient
+            client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+            
             qdrant_store = Qdrant.from_existing_collection(
-                url=QDRANT_URL,
-                api_key=QDRANT_API_KEY,
                 collection_name=collection_name,
                 embedding=self.embedding_service,
                 content_payload_key="text",
+                client=client,
             )
             
             return qdrant_store.as_retriever(
@@ -110,15 +112,7 @@ class MultilingualRAGService:
                                user_language: Optional[str] = None, k: int = 5) -> List[Document]:
         """
         Perform language-aware retrieval with cross-language capabilities.
-        
-        Args:
-            query: Search query
-            collection_name: Qdrant collection name
-            user_language: User's preferred language
-            k: Number of results to retrieve
-            
-        Returns:
-            List of retrieved documents with language-aware ranking
+        Uses direct QdrantClient query to avoid compatibility issues.
         """
         try:
             # Detect query language
@@ -129,11 +123,35 @@ class MultilingualRAGService:
             if LOG_CROSS_LANGUAGE_RETRIEVAL:
                 logger.info(f"Query language: {query_language} (confidence: {confidence:.2f})")
             
-            # Get retriever
-            retriever = self.get_multilingual_retriever(collection_name, k * 2)  # Get more for reranking
+            # 1. Embed the query
+            # self.embedding_service is a LangChain Embeddings interface (HuggingFaceBgeEmbeddings)
+            query_vector = self.embedding_service.embed_query(query)
             
-            # Retrieve documents
-            documents = retriever.invoke(query)
+            # 2. Query Qdrant directly
+            from qdrant_client import QdrantClient
+            client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+            
+            # Use query_points which is available in newer clients
+            search_result = client.query_points(
+                collection_name=collection_name,
+                query=query_vector,
+                limit=k * 2, # Get more for reranking
+                with_payload=True
+            ).points
+            
+            # 3. Convert to Documents
+            documents = []
+            for point in search_result:
+                metadata = point.payload
+                content = metadata.pop("text", "") if metadata else ""
+                
+                # Add score to metadata for debugging/reranking
+                docs_metadata = metadata.copy() if metadata else {}
+                docs_metadata['score'] = point.score
+                
+                # Create doc
+                doc = Document(page_content=content, metadata=docs_metadata)
+                documents.append(doc)
             
             if not documents:
                 logger.warning(f"No documents retrieved for query: {query[:50]}...")
@@ -160,14 +178,6 @@ class MultilingualRAGService:
                            user_language: Optional[str] = None) -> List[Document]:
         """
         Rerank documents based on language preferences.
-        
-        Args:
-            documents: Retrieved documents
-            query_language: Detected query language
-            user_language: User's preferred language
-            
-        Returns:
-            Reranked documents
         """
         if not CROSS_LANGUAGE_ENABLED:
             return documents
@@ -183,8 +193,8 @@ class MultilingualRAGService:
                 doc_language, query_language, user_language
             )
             
-            # Get original similarity score (if available)
-            original_score = getattr(doc, 'score', 1.0)
+            # Get original similarity score from metadata
+            original_score = doc.metadata.get('score', 1.0)
             
             # Apply language boost
             final_score = original_score * language_score

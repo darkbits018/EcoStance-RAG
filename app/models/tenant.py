@@ -35,6 +35,7 @@ class Tenant(Base):
     
     # Settings and configuration
     settings = Column(JSON, default=dict)
+    gmail_config = Column(JSON, default=dict)  # Stores encrypted OAuth credentials and general Gmail settings
     # Example settings structure:
     # {
     #     "max_storage_bytes": 10737418240,  # 10GB

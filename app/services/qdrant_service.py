@@ -102,6 +102,19 @@ def create_collection_if_not_exists(client: QdrantClient, collection_name: str):
     except Exception as e:
         print(f"Warning: Could not create payload index for 'source_filename'. This may affect delete performance. Error: {e}")
 
+    # Ensure the payload index for 'email_id' exists (for Gmail integration).
+    try:
+        print(f"Ensuring payload index exists for 'email_id' in '{collection_name}'...")
+        client.create_payload_index(
+            collection_name=collection_name,
+            field_name="email_id",
+            field_schema=models.PayloadSchemaType.KEYWORD,
+            wait=True
+        )
+        print("Payload index for 'email_id' created or already exists.")
+    except Exception as e:
+        print(f"Warning: Could not create payload index for 'email_id'. Error: {e}")
+
 
 def upload_to_qdrant(
     client: QdrantClient, 
@@ -141,6 +154,32 @@ def upload_to_qdrant(
         wait=True
     )
     logger.info(f"Successfully uploaded {len(points_to_upload)} points to Qdrant collection '{collection_name}'")
+
+
+def delete_points_by_metadata(client: QdrantClient, collection_name: str, key: str, value: str):
+    """
+    Deletes points from a collection where the payload metadata matches the given key-value pair.
+    Useful for deleting vectors associated with a specific file or email.
+    """
+    try:
+        client.delete(
+            collection_name=collection_name,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key=key,
+                            match=models.MatchValue(value=value),
+                        ),
+                    ],
+                )
+            ),
+        )
+        logger.info(f"Deleted points from '{collection_name}' where {key}={value}")
+        return True
+    except Exception as e:
+        logger.error(f"Error deleting points: {e}")
+        raise
 
 # --- Knowledge Base Management Functions ---
 
