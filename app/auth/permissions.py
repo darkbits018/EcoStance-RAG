@@ -45,6 +45,11 @@ class Permission(str, Enum):
     GMAIL_VIEW_LOGS = "gmail:view_logs"
     GMAIL_SEARCH = "gmail:search"
     GMAIL_ADMIN = "gmail:admin"
+
+    # Dynamics permissions
+    DYNAMICS_CONFIGURE = "dynamics:configure"
+    DYNAMICS_SYNC = "dynamics:sync"
+
     
     # Admin permissions
     ADMIN_VIEW_ALL = "admin:view_all"
@@ -85,8 +90,11 @@ SYSTEM_ROLE_PERMISSIONS = {
         # Gmail permissions
         Permission.GMAIL_VIEW, Permission.GMAIL_CONFIGURE, Permission.GMAIL_MANAGE_RECIPIENTS,
         Permission.GMAIL_MANAGE_SCHEDULES, Permission.GMAIL_EXECUTE_SYNC, 
-        Permission.GMAIL_VIEW_LOGS, Permission.GMAIL_SEARCH, Permission.GMAIL_ADMIN
+        Permission.GMAIL_VIEW_LOGS, Permission.GMAIL_SEARCH, Permission.GMAIL_ADMIN,
+        # Dynamics permissions
+        Permission.DYNAMICS_CONFIGURE, Permission.DYNAMICS_SYNC
     }
+
 }
 
 
@@ -168,6 +176,8 @@ ROLE_PERMISSIONS: dict[Role, Set[Permission]] = {
         Permission.GMAIL_VIEW_LOGS,
         Permission.GMAIL_SEARCH,
         Permission.GMAIL_ADMIN,
+        Permission.DYNAMICS_CONFIGURE,
+        Permission.DYNAMICS_SYNC,
     },
     Role.SUPER_ADMIN: set(Permission),  # All permissions
 }

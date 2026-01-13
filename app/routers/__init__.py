@@ -17,6 +17,7 @@ from . import public_chat_router
 from . import public_agent_router
 from . import tenant_users
 from . import gmail_router
+from . import dynamics_router
 
 __all__ = [
     "upload",
@@ -34,5 +35,6 @@ __all__ = [
     "public_chat_router",
     "public_agent_router",
     "tenant_users",
-    "gmail_router"
+    "gmail_router",
+    "dynamics_router"
 ]
