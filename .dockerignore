@@ -1,0 +1,88 @@
+# ==========================================
+# Centralized .dockerignore for All Projects
+# ==========================================
+
+# Environment Variables (use Docker secrets instead)
+.env
+.env.*
+*.env
+!.env.example
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+.tox/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+dist-ssr/
+*.local
+
+# Databases (should be volume-mounted)
+*.db
+*.sqlite
+*.sqlite3
+crm.db
+QuickShip.db
+.db_connections/
+
+# Uploads & Runtime Data (should be volume-mounted)
+uploads/
+data/
+
+# IDE & Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (optional - include if needed)
+*.md
+!README.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Testing
+.benchmarks/
+*.test.js
+*.spec.js
+*.test.ts
+*.spec.ts
+
+# Logs
+logs/
+*.log
+
+# Misc
+.aiexclude
+.kiro/
+migrations/
