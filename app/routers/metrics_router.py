@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/v1/metrics", tags=["metrics"])
 
 @router.get("/")
 async def get_tenant_metrics(
-    metric_type: str = Query("daily", regex="^(hourly|daily|monthly)$"),
+    metric_type: str = Query("daily", pattern="^(hourly|daily|monthly)$"),
     days: int = Query(30, ge=1, le=365),
     tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
@@ -162,7 +162,7 @@ async def get_active_alerts(
 @router.get("/alerts/history")
 async def get_alert_history(
     days: int = Query(7, ge=1, le=90),
-    severity: Optional[str] = Query(None, regex="^(info|warning|critical)$"),
+    severity: Optional[str] = Query(None, pattern="^(info|warning|critical)$"),
     tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
@@ -193,7 +193,7 @@ async def get_alert_history(
 
 @router.get("/export")
 async def export_metrics(
-    format: str = Query("csv", regex="^(csv|json)$"),
+    format: str = Query("csv", pattern="^(csv|json)$"),
     days: int = Query(30, ge=1, le=365),
     tenant_id: str = Depends(get_tenant_id),
     db: Session = Depends(get_db)
@@ -259,7 +259,7 @@ async def export_metrics(
 # Admin endpoints
 @router.get("/admin/all")
 async def get_all_tenant_metrics(
-    metric_type: str = Query("daily", regex="^(hourly|daily|monthly)$"),
+    metric_type: str = Query("daily", pattern="^(hourly|daily|monthly)$"),
     limit: int = Query(100, ge=1, le=1000),
     admin_tenant_id: str = Depends(require_admin),
     db: Session = Depends(get_db)
@@ -307,7 +307,7 @@ async def get_all_tenant_metrics(
 
 @router.post("/admin/aggregate")
 async def trigger_metrics_aggregation(
-    period: str = Query("hourly", regex="^(hourly|daily)$"),
+    period: str = Query("hourly", pattern="^(hourly|daily)$"),
     admin_tenant_id: str = Depends(require_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:

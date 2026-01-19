@@ -126,3 +126,27 @@ def refresh_access_token(refresh_token: str) -> str:
     }
     
     return create_access_token(new_token_data)
+
+
+def create_invite_token(data: Dict[str, Any], expires_hours: int = 48) -> str:
+    """
+    Create a JWT invite token.
+    
+    Args:
+        data: Dictionary containing claims (email, tenant_id, etc.)
+        expires_hours: Expiration time in hours (default 48)
+        
+    Returns:
+        Encoded JWT invite token string
+    """
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(hours=expires_hours)
+    
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "type": "invite"
+    })
+    
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt

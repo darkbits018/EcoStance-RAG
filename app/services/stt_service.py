@@ -47,6 +47,7 @@ class WhisperProvider(STTProvider):
     async def transcribe(self, audio_file_path: str) -> Dict[str, Any]:
         """Transcribe using Whisper"""
         self._load_model()
+        logger.info(f"Starting Whisper transcription for: {audio_file_path}")
         
         try:
             # Use librosa to load audio file (works without FFmpeg)
@@ -54,17 +55,31 @@ class WhisperProvider(STTProvider):
             import numpy as np
             
             # Load audio file using librosa
-            audio_data, sample_rate = librosa.load(audio_file_path, sr=16000)
+            # Whisper expects 16000Hz mono audio
+            audio_data, _ = librosa.load(audio_file_path, sr=16000, mono=True)
             
-            # Convert to numpy array if needed
-            if not isinstance(audio_data, np.ndarray):
-                audio_data = np.array(audio_data)
+            # Convert to numpy array of float32
+            # librosa already returns float32 normalized to [-1, 1], which Whisper expects
             
             # Transcribe using the loaded audio data
-            result = self.model.transcribe(audio_data)
+            # fp16=False is safer for CPU usage
+            result = self.model.transcribe(audio_data, fp16=False)
             
+            text = result["text"].strip()
+            logger.info(f"Whisper extracted {len(text)} characters.")
+            
+            if not text:
+                logger.error("Whisper returned empty text!")
+                # Fallback or error - returning empty string causes downstream 400
+                return {
+                     "text": "[Audio was processed but no speech was detected]",
+                     "confidence": 0.0,
+                     "language": "unknown",
+                     "provider": f"whisper_{self.model_size}"
+                }
+
             return {
-                "text": result["text"].strip(),
+                "text": text,
                 "confidence": 0.9,  # Whisper doesn't provide confidence scores
                 "language": result.get("language", "unknown"),
                 "provider": f"whisper_{self.model_size}"
