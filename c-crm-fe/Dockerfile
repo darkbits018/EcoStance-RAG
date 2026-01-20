@@ -1,31 +1,20 @@
-# Build stage
-FROM node:20-alpine AS builder
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
 RUN npm ci
 
-# Copy source code
 COPY . .
 
-# Build argument for API URL
+# Build arguments for environment variables
 ARG VITE_CRM_API_BASE_URL=http://localhost:8001/api/v1
+ARG VITE_ENVIRONMENT=development
+
 ENV VITE_CRM_API_BASE_URL=$VITE_CRM_API_BASE_URL
-
-# Build application
-RUN npm run build:docker
-
-# Production stage
-FROM nginx:alpine
-
-# Copy built files
-COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+ENV VITE_ENVIRONMENT=$VITE_ENVIRONMENT
 
 EXPOSE 3001
 
-CMD ["nginx", "-g", "daemon off;"]
+# Run in dev mode for easy local testing without Nginx
+CMD ["npm", "run", "dev", "--", "--port", "3001", "--host", "0.0.0.0"]

@@ -55,6 +55,13 @@ services:
       - GOOGLE_CLIENT_ID=${ECOSTANCE_GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${ECOSTANCE_GOOGLE_CLIENT_SECRET}
       - GOOGLE_REDIRECT_URI=${ECOSTANCE_GOOGLE_REDIRECT_URI}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001,http://localhost:5173}
     volumes:
       - ./ecostance-agent-v1/uploads:/app/uploads
       - ./ecostance-agent-v1/data:/app/data
@@ -93,6 +100,8 @@ services:
       dockerfile: Dockerfile
       args:
         - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8000/api/v1}
+        - VITE_ENVIRONMENT=${VITE_ENVIRONMENT:-production}
+        - VITE_BYPASS_AUTH=${VITE_BYPASS_AUTH:-false}
     container_name: ecostance-ui
     depends_on:
       - ecostance-agent
@@ -109,6 +118,7 @@ services:
       dockerfile: Dockerfile
       args:
         - VITE_CRM_API_BASE_URL=${VITE_CRM_API_BASE_URL:-http://localhost:8001/api/v1}
+        - VITE_ENVIRONMENT=${VITE_ENVIRONMENT:-production}
     container_name: crm-frontend
     depends_on:
       - crm-backend

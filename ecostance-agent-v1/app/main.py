@@ -197,6 +197,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# Add CORS middleware because frontends (3000/3001) call backends (8000/8001) directly
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:5173").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # === BEGIN: branch error handling ===
 # Add global exception handlers
 app.add_exception_handler(BaseAppException, base_app_exception_handler)
