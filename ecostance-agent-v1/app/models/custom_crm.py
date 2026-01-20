@@ -1,24 +1,26 @@
+from sqlalchemy import Column, String, DateTime, Text
 from datetime import datetime
 from typing import Optional
 from sqlmodel import SQLModel, Field
 import uuid
+from ..db.database import Base
 
-class CustomCRMEmail(SQLModel, table=True):
+class CustomCRMEmail(Base):
     """
     Tracks emails ingested from the Custom CRM to prevent invalid duplicates.
     This table maps the CRM's email ID to the Tenant's workspace.
     """
     __tablename__ = "custom_crm_emails"
 
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    tenant_id: str = Field(index=True, nullable=False)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String(36), nullable=False, index=True)
     
     # The ID from the Custom CRM (Gmail Message ID or internal UUID)
-    crm_email_id: str = Field(index=True, nullable=False)
+    crm_email_id = Column(String(255), index=True, nullable=False)
     
     # Metadata for display/history
-    subject: Optional[str] = None
-    sender: Optional[str] = None
-    received_at: Optional[datetime] = None
+    subject = Column(String(500), nullable=True)
+    sender = Column(String(255), nullable=True)
+    received_at = Column(DateTime, nullable=True)
     
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)

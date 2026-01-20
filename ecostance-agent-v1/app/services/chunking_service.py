@@ -8,7 +8,7 @@ from typing import List, Dict, Any
 # In a production environment, this should be handled during the application's setup or in the Dockerfile.
 try:
     nltk.data.find('tokenizers/punkt')
-except LookupError:
+except nltk.downloader.DownloadError:
     print("Downloading NLTK's 'punkt' model for sentence tokenization...")
     nltk.download('punkt')
 

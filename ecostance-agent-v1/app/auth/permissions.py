@@ -50,6 +50,10 @@ class Permission(str, Enum):
     DYNAMICS_CONFIGURE = "dynamics:configure"
     DYNAMICS_SYNC = "dynamics:sync"
 
+    # Custom CRM permissions
+    CUSTOM_CRM_VIEW = "custom_crm:view"
+    CUSTOM_CRM_SYNC = "custom_crm:sync"
+
     
     # Admin permissions
     ADMIN_VIEW_ALL = "admin:view_all"
@@ -92,7 +96,9 @@ SYSTEM_ROLE_PERMISSIONS = {
         Permission.GMAIL_MANAGE_SCHEDULES, Permission.GMAIL_EXECUTE_SYNC, 
         Permission.GMAIL_VIEW_LOGS, Permission.GMAIL_SEARCH, Permission.GMAIL_ADMIN,
         # Dynamics permissions
-        Permission.DYNAMICS_CONFIGURE, Permission.DYNAMICS_SYNC
+        Permission.DYNAMICS_CONFIGURE, Permission.DYNAMICS_SYNC,
+        # Custom CRM permissions
+        Permission.CUSTOM_CRM_VIEW, Permission.CUSTOM_CRM_SYNC
     }
 
 }
@@ -178,6 +184,8 @@ ROLE_PERMISSIONS: dict[Role, Set[Permission]] = {
         Permission.GMAIL_ADMIN,
         Permission.DYNAMICS_CONFIGURE,
         Permission.DYNAMICS_SYNC,
+        Permission.CUSTOM_CRM_VIEW,
+        Permission.CUSTOM_CRM_SYNC,
     },
     Role.SUPER_ADMIN: set(Permission),  # All permissions
 }

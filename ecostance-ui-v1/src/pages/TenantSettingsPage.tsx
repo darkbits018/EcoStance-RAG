@@ -9,6 +9,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { Settings, CreditCard, Bell, BarChart3, AlertCircle, Shield, Users, Plug } from 'lucide-react';
 import GmailSettings from '../components/gmail/GmailSettings';
 import DynamicsSettings from '../components/dynamics/DynamicsSettings';
+import CustomCrmSettings from '../components/custom-crm/CustomCrmSettings';
 
 interface Tenant {
   id: string;
@@ -381,21 +382,27 @@ export default function TenantSettingsPage() {
       )}
       {/* Integrations Tab */}
       {activeTab === 'integrations' && (
-        <IntegrationsSection tenant={tenant} onRefresh={loadTenantData} />
+        <IntegrationsSection tenant={tenant} />
       )}
     </div>
   );
 }
 
-function IntegrationsSection({ tenant, onRefresh }: { tenant: Tenant | null, onRefresh: () => Promise<void> }) {
+
+
+function IntegrationsSection({ tenant }: { tenant: Tenant | null }) {
   const { hasPermission, isSystemAdmin } = usePermissions();
   // Use lowercase permission strings to match backend response
   const canGmail = hasPermission('gmail:configure') || isSystemAdmin();
   const canDynamics = hasPermission('dynamics:configure') || isSystemAdmin();
+  // Allow if has specific permission OR if can manage gmail (as a temporary fallback for existing admins)
+  const canCustomCrm = hasPermission('custom_crm:configure') || hasPermission('gmail:configure') || isSystemAdmin();
 
-  const [activeIntegration, setActiveIntegration] = useState<'gmail' | 'dynamics'>(canGmail ? 'gmail' : (canDynamics ? 'dynamics' : 'gmail'));
+  // Determine default tab
+  const defaultTab = canGmail ? 'gmail' : (canDynamics ? 'dynamics' : (canCustomCrm ? 'custom-crm' : 'gmail'));
+  const [activeIntegration, setActiveIntegration] = useState<'gmail' | 'dynamics' | 'custom-crm'>(defaultTab);
 
-  if (!canGmail && !canDynamics) {
+  if (!canGmail && !canDynamics && !canCustomCrm) {
     return (
       <Card className="p-6 bg-surface border-border">
         <div className="flex items-center gap-3 text-warning">
@@ -431,14 +438,33 @@ function IntegrationsSection({ tenant, onRefresh }: { tenant: Tenant | null, onR
             Dynamics 365
           </button>
         )}
+        {canCustomCrm && (
+          <button
+            onClick={() => setActiveIntegration('custom-crm')}
+            className={`pb-2 px-1 border-b-2 transition-colors ${activeIntegration === 'custom-crm'
+              ? 'border-primary text-primary font-medium'
+              : 'border-transparent text-text-secondary hover:text-text'
+              }`}
+          >
+            Custom CRM (Beta)
+          </button>
+        )}
+      </div>
+
+      <div className="text-xs text-gray-400 mb-2">
+        Debug: G={canGmail ? 'Yes' : 'No'}, D={canDynamics ? 'Yes' : 'No'}, C={canCustomCrm ? 'Yes' : 'No'}
       </div>
 
       {activeIntegration === 'gmail' && canGmail && (
-        <GmailSettings tenant={tenant} onRefresh={onRefresh} />
+        <GmailSettings tenant={tenant} />
       )}
 
       {activeIntegration === 'dynamics' && canDynamics && (
         <DynamicsSettings />
+      )}
+
+      {activeIntegration === 'custom-crm' && canCustomCrm && (
+        <CustomCrmSettings />
       )}
     </div>
   );

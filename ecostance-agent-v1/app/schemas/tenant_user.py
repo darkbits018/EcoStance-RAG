@@ -13,6 +13,16 @@ class TenantUserCreate(TenantUserBase):
     # Password field would be here if we were handling auth locally for users
     # For now, we assume invitation flow or external auth
 
+class TenantUserInvite(TenantUserBase):
+    role_id: Optional[str] = None
+    # No password needed for invite
+
+class TenantUserBulkInvite(BaseModel):
+    emails: List[EmailStr]
+    role_id: str
+
+
+
 class TenantUserUpdate(BaseModel):
     full_name: Optional[str] = None
     is_active: Optional[bool] = None

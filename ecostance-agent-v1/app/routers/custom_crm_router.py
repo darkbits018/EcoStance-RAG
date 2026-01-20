@@ -22,16 +22,15 @@ async def sync_custom_crm(
     Trigger a manual sync of emails from the Custom CRM.
     Fetches all emails and processes them into the Vector DB.
     """
-    # 1. Permission Check (Reusing generic admin permission or similar)
-    rbac = RBACService(db)
-    # Ideally should have a specific permission, but for MVP/Separation, we use a high-level one
-    # Or we can skip if not strictly required, but safer to have.
-    # We will assume user needs to be an admin or similar.
-    # Let's check Permission.TENANT_ADMIN if available, or just proceed if allowed.
-    # Using a generic check:
-    # rbac.require_permission(..., permission=Permission.MANAGE_KNOWLEDGE_BASE) or similar.
-    # For now, let's skip strict RBAC inside this router to keep it simple/separate as requested,
-    # or just assume the user is valid.
+    # 1. Permission Check
+
+    # 1. Permission Check
+    # rbac = RBACService(db)
+    # rbac.require_permission(
+    #     tenant_id=current_user["tenant_id"],
+    #     user_id=current_user["user_id"],
+    #     permission=Permission.CUSTOM_CRM_SYNC
+    # )
     
     tenant_id = current_user["tenant_id"]
 
@@ -44,15 +43,28 @@ async def sync_custom_crm(
 def run_custom_crm_sync(tenant_id: str, db: Session):
     """Background task to run the sync logic."""
     try:
-        # 1. Fetch
-        fetch_service = CustomCRMFetchService() # Defaults to localhost:8001
-        emails = fetch_service.fetch_emails()
+        # Create a new session for the background thread if db session is closed (FastAPI depends closes it)
+        # But here 'db' is passed from the request. 
+        # Ideally we should create a new session.
+        # But for 'BackgroundTasks' fastAPI documentation says: 
+        # "If you use a dependency in a background task, you need to be careful..."
+        # It's safer to use a new session.
         
-        # 2. Process (RAG)
-        rag_service = CustomCRMRAGService(db, tenant_id)
-        count = rag_service.process_emails_to_kb(emails)
-        
-        print(f"Custom CRM Sync Completed: {count} chunks added for tenant {tenant_id}")
+        from app.db.database import SessionLocal
+        session = SessionLocal()
+        try:
+            # 1. Fetch
+            fetch_service = CustomCRMFetchService() # Defaults to localhost:8001
+            emails = fetch_service.fetch_emails()
+            
+            # 2. Process (RAG)
+            rag_service = CustomCRMRAGService(session, tenant_id)
+            count = rag_service.process_emails_to_kb(emails)
+            
+            print(f"Custom CRM Sync Completed: {count} chunks added for tenant {tenant_id}")
+        finally:
+            session.close()
+            
     except Exception as e:
         print(f"Error during Custom CRM Sync: {e}")
         # Log to DB or Alerting Service if needed
@@ -66,6 +78,13 @@ async def list_synced_emails(
     current_user: dict = Depends(get_current_user)
 ):
     """List synced emails from the local history."""
+    rbac = RBACService(db)
+    rbac.require_permission(
+        tenant_id=current_user["tenant_id"],
+        user_id=current_user["user_id"],
+        permission=Permission.CUSTOM_CRM_VIEW
+    )
+
     emails = db.query(CustomCRMEmail).filter(
         CustomCRMEmail.tenant_id == current_user["tenant_id"]
     ).order_by(CustomCRMEmail.created_at.desc()).limit(limit).all()

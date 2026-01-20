@@ -8,8 +8,9 @@ from ..models import (
     TenantDatabase,
     TenantKnowledgeBase,
     TenantUser,
-    TenantAPIKey
+    CustomCRMEmail
 )
+
 from ..models.tenant_quota import TenantQuota
 from ..models.audit_log import AuditLog
 

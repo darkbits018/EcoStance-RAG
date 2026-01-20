@@ -1,8 +1,9 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 
-from .routers import upload, qdrant_upload, query_router, management_router, db_router, auth_router, file_router, tenant_router, admin_router, usage_router, quota_router, metrics_router, public_chat_router, public_agent_router, llm_usage_router, cache_router, system_router, tenant_roles, permissions, admin, tenant_users, gmail_router, dynamics_router
+from .routers import upload, qdrant_upload, query_router, management_router, db_router, auth_router, file_router, tenant_router, admin_router, usage_router, quota_router, metrics_router, public_chat_router, public_agent_router, llm_usage_router, cache_router, system_router, tenant_roles, permissions, admin, tenant_users, gmail_router, dynamics_router, custom_crm_router
 from .services.cleanup_service import cleanup_service
 from .services.scheduler_service import start_scheduler, stop_scheduler
 from .middleware.auth_middleware import AuthMiddleware

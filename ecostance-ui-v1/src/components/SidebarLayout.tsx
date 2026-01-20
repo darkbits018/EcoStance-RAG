@@ -59,8 +59,12 @@ const SidebarLayout: React.FC = () => {
   // Check if user is super admin
   const isSuperAdmin = user?.role === 'super_admin' || user?.role === 'admin';
 
+  // Check if user is tenant admin
+  const isTenantAdmin = user?.role === 'admin' || user?.role === 'Admin';
+
   const allSidebarItems = [
     { path: '/', label: 'Dashboard', icon: Icons.LayoutDashboard, requiresSuperAdmin: false },
+    { path: '/users', label: 'Users', icon: Icons.Users, requiresSuperAdmin: false, requiresTenantAdmin: true },
     { path: '/knowledge-base', label: 'Knowledge Base', icon: Icons.BookOpen, requiresSuperAdmin: false },
     { path: '/chat', label: 'Internal Chat', icon: Icons.Search, requiresSuperAdmin: false },
     { path: '/database-chat', label: 'Database Chat', icon: Icons.Database, requiresSuperAdmin: false },
@@ -72,8 +76,9 @@ const SidebarLayout: React.FC = () => {
   ];
 
   // Filter sidebar items based on user role
-  const sidebarItems = allSidebarItems.filter(item => 
-    !item.requiresSuperAdmin || isSuperAdmin
+  const sidebarItems = allSidebarItems.filter(item =>
+    (!item.requiresSuperAdmin || isSuperAdmin) &&
+    (!item.requiresTenantAdmin || isTenantAdmin)
   );
 
   // Determine the current page title for the header
@@ -130,7 +135,7 @@ const SidebarLayout: React.FC = () => {
             </NavLink>
           ))}
         </nav>
-        
+
         {/* Logout Button at Bottom */}
         <div className="p-3 border-t border-border">
           <LogoutButton isSidebarOpen={isSidebarOpen} />

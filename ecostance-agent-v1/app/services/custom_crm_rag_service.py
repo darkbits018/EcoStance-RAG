@@ -3,6 +3,7 @@ import os
 from typing import List, Dict
 from sqlalchemy.orm import Session
 from dateutil import parser
+from datetime import datetime
 
 # Reuse existing services
 from app.services.chunking_service import chunk_blocks
@@ -32,11 +33,14 @@ class CustomCRMRAGService:
 
         # Filter duplicates based on crm_email_id
         email_ids = [e['id'] for e in emails]
-        existing_ids = self.db.query(CustomCRMEmail.crm_email_id).filter(
+        
+        # SQLAlchemy query
+        existing_records = self.db.query(CustomCRMEmail.crm_email_id).filter(
             CustomCRMEmail.tenant_id == self.tenant_id,
             CustomCRMEmail.crm_email_id.in_(email_ids)
         ).all()
-        existing_ids_set = {id[0] for id in existing_ids}
+        
+        existing_ids_set = {r[0] for r in existing_records}
         
         new_emails = [e for e in emails if e['id'] not in existing_ids_set]
         
@@ -102,11 +106,15 @@ class CustomCRMRAGService:
             try:
                 # CRM likely sends ISO format string, but verify parsing
                 received_at = None
-                if email.get('received_at'):
-                    if isinstance(email['received_at'], str):
-                         received_at = parser.parse(email['received_at'])
+                raw_date = email.get('received_at')
+                if raw_date:
+                    if isinstance(raw_date, str):
+                        try:
+                             received_at = parser.parse(raw_date)
+                        except:
+                             received_at = datetime.utcnow() # Fallback
                     else:
-                        received_at = email['received_at'] # already datetime?
+                        received_at = raw_date 
 
                 record = CustomCRMEmail(
                     tenant_id=self.tenant_id,

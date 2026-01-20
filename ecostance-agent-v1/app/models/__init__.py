@@ -8,6 +8,7 @@ from .tenant_user import TenantUser
 from .tenant_role import TenantRole
 from .tenant_quota import TenantQuota
 from .audit_log import AuditLog
+from .custom_crm import CustomCRMEmail
 
 __all__ = [
     "Tenant",
@@ -16,5 +17,6 @@ __all__ = [
     "TenantUser",
     "TenantRole",
     "TenantQuota",
-    "AuditLog"
+    "AuditLog",
+    "CustomCRMEmail"
 ]

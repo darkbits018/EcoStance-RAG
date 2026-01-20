@@ -1,7 +1,7 @@
 """
 TenantUser model - represents users and their roles within a tenant.
 """
-from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, UniqueConstraint
+from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, UniqueConstraint, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
@@ -33,6 +33,9 @@ class TenantUser(Base):
     
     # Status
     is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Settings and configuration
+    gmail_config = Column(JSON, default=dict)  # User-specific Gmail credentials
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

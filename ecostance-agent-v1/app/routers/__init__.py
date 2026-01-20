@@ -18,6 +18,7 @@ from . import public_agent_router
 from . import tenant_users
 from . import gmail_router
 from . import dynamics_router
+from . import custom_crm_router
 
 __all__ = [
     "upload",
@@ -36,5 +37,6 @@ __all__ = [
     "public_agent_router",
     "tenant_users",
     "gmail_router",
-    "dynamics_router"
+    "dynamics_router",
+    "custom_crm_router"
 ]

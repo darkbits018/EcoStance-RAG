@@ -5,7 +5,7 @@ Processes extracted emails into the vector database using the existing RAG pipel
 import logging
 import uuid
 import os
-from typing import List, Dict
+from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 
 # Import existing services we want to reuse to ensure consistency
@@ -23,9 +23,10 @@ embedding_model = load_embedding_model()
 qdrant_client = get_qdrant_client()
 
 class GmailRAGService:
-    def __init__(self, db: Session, tenant_id: str):
+    def __init__(self, db: Session, tenant_id: str, user_id: Optional[str] = None):
         self.db = db
         self.tenant_id = tenant_id
+        self.user_id = user_id
         
     def process_emails_to_kb(self, emails: List[Dict]) -> int:
         """
@@ -71,7 +72,12 @@ class GmailRAGService:
             blocks.append({
                 "type": "Title",
                 "text": header_text,
-                "metadata": {"email_id": email['id'], "source": "gmail", "type": "header"}
+                "metadata": {
+                    "email_id": email['id'], 
+                    "source": "gmail", 
+                    "type": "header",
+                    "user_id": self.user_id
+                }
             })
             
             # Create body block
@@ -88,7 +94,8 @@ class GmailRAGService:
                         "source": "gmail", 
                         "sender": email['sender'],
                         "subject": email['subject'],
-                        "date": email['date']
+                        "date": email['date'],
+                        "user_id": self.user_id
                     }
                 })
             else:
@@ -143,6 +150,7 @@ class GmailRAGService:
                     
                 msg = GmailMessage(
                     tenant_id=self.tenant_id,
+                    user_id=self.user_id,
                     gmail_message_id=email['id'],
                     thread_id=email.get('threadId'),
                     subject=email.get('subject')[:500] if email.get('subject') else None,

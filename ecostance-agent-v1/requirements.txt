@@ -148,6 +148,7 @@ python-dotenv==1.2.1
 python-jose==3.5.0
 python-multipart==0.0.21
 pytz==2025.2
+pywin32==311
 PyYAML==6.0.3
 qdrant-client==1.16.2
 referencing==0.37.0

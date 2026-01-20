@@ -120,6 +120,7 @@ class SchedulerService:
         """Execute a single Gmail sync schedule."""
         log = GmailExecutionLog(
             tenant_id=schedule.tenant_id,
+            user_id=schedule.user_id,
             schedule_id=schedule.id,
             execution_type='scheduled',
             status='running',
@@ -133,14 +134,14 @@ class SchedulerService:
             
             # 1. Authenticate
             auth_service = GmailAuthService(db)
-            creds = auth_service.get_credentials(schedule.tenant_id)
+            creds = auth_service.get_credentials(schedule.tenant_id, schedule.user_id)
             
             if not creds:
                 raise ValueError("Gmail credentials not found or invalid for tenant")
 
             # 2. Setup Services
             fetch_service = GmailFetchService(creds)
-            rag_service = GmailRAGService(db, schedule.tenant_id)
+            rag_service = GmailRAGService(db, schedule.tenant_id, schedule.user_id)
             
             total_processed = 0
             

@@ -14,6 +14,7 @@ class GmailRecipient(Base):
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=True, index=True) # The user who owns this recipient
     
     email_address = Column(String(255), nullable=False)
     display_name = Column(String(255), nullable=True)
@@ -34,6 +35,7 @@ class GmailSchedule(Base):
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=True, index=True) # The user who created this schedule
     
     name = Column(String(255), nullable=False)
     schedule_type = Column(String(50), nullable=False)  # 'interval', 'daily', 'weekly'
@@ -57,6 +59,7 @@ class GmailExecutionLog(Base):
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=True, index=True)
     
     schedule_id = Column(String(36), ForeignKey("gmail_schedules.id", ondelete="SET NULL"), nullable=True)
     recipient_id = Column(String(36), ForeignKey("gmail_recipients.id", ondelete="SET NULL"), nullable=True)
@@ -78,6 +81,7 @@ class GmailMessage(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=True, index=True) # The user who owns/ingested this message
     
     gmail_message_id = Column(String(255), nullable=False) # The actual ID from Gmail
     thread_id = Column(String(255), nullable=True)

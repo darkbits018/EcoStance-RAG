@@ -28,6 +28,8 @@ import AuditLogsPage from './pages/admin/AuditLogsPage';
 import MaintenancePage from './pages/admin/MaintenancePage';
 import PlatformSettingsPage from './pages/admin/PlatformSettingsPage';
 import GmailCallbackPage from './pages/GmailCallbackPage';
+import UserManagementPage from './pages/UserManagementPage';
+import SetPasswordPage from './pages/SetPasswordPage';
 import { AuthProvider, useAuth } from './context/AuthContext.v2';
 import { Icons } from './components/icons';
 
@@ -102,6 +104,7 @@ function App() {
           <Route path="/register" element={<SignupPage />} />
           <Route path="/public-chat" element={<PublicChatPage />} />
           <Route path="/public-agent" element={<PublicAgentPage />} />
+          <Route path="/auth/set-password" element={<SetPasswordPage />} />
 
           {/* Super Admin Routes */}
           <Route path="/admin/login" element={<SuperAdminLoginPage />} />
@@ -140,6 +143,7 @@ function App() {
             <Route path="chat" element={<InternalChatPage />} />
             <Route path="database-chat" element={<DatabaseChatPage />} />
             <Route path="ai-agent" element={<AIAgentPage />} />
+            <Route path="users" element={<UserManagementPage />} />
             <Route path="settings" element={<TenantSettingsPage />} />
             <Route path="admin/public-chat" element={<AdminPublicChatPage />} />
             <Route path="admin/public-agent" element={<AdminPublicAgentPage />} />

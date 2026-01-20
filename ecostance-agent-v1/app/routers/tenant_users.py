@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List
 import uuid
 
@@ -9,7 +10,10 @@ from app.auth.rbac import RBACService
 from app.auth.permissions import Permission
 from app.models.tenant_user import TenantUser
 from app.models.tenant_role import TenantRole
-from app.schemas.tenant_user import TenantUserCreate, TenantUserUpdate, TenantUserResponse
+from app.schemas.tenant_user import TenantUserCreate, TenantUserUpdate, TenantUserResponse, TenantUserInvite, TenantUserBulkInvite
+from app.services.email_service import EmailService
+from app.auth.jwt_handler import create_invite_token
+import os
 
 router = APIRouter(prefix="/api/v1/tenant", tags=["Tenant User Management"])
 
@@ -97,6 +101,196 @@ async def create_tenant_user(
     
     return _enrich_user(new_tenant_user)
 
+
+@router.post("/users/invite", response_model=TenantUserResponse, status_code=status.HTTP_201_CREATED)
+async def invite_tenant_user(
+    invite_data: TenantUserInvite,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Invite a new user to the tenant.
+    
+    1. Creates the user record (pending status).
+    2. Generates an invite token.
+    3. Sends an invitation email.
+    
+    Requires: TENANT_MANAGE_USERS permission
+    """
+    rbac = RBACService(db)
+    tenant_id = current_user["tenant_id"]
+    
+    # Check permission
+    rbac.require_permission(
+        tenant_id=tenant_id,
+        user_id=current_user["user_id"],
+        permission=Permission.TENANT_MANAGE_USERS
+    )
+    
+    # Check if user with email already exists in this tenant
+    existing_user = db.query(TenantUser).filter(
+        TenantUser.tenant_id == tenant_id,
+        TenantUser.email == invite_data.email
+    ).first()
+    
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email already exists in the tenant"
+        )
+    
+    # Validate role if provided
+    tenant_role_id = None
+    if invite_data.role_id:
+        role = db.query(TenantRole).filter(
+            TenantRole.id == invite_data.role_id,
+            TenantRole.tenant_id == tenant_id
+        ).first()
+        if not role:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid role_id"
+            )
+        tenant_role_id = role.id
+
+    # Create new user
+    new_user_id = str(uuid.uuid4())
+    
+    # User created via invite has no password initially (password_hash is null)
+    new_tenant_user = TenantUser(
+        tenant_id=tenant_id,
+        user_id=new_user_id,
+        email=invite_data.email,
+        full_name=invite_data.full_name,
+        password_hash=None, # Will be set upon accepting invite
+        is_active=invite_data.is_active,
+        tenant_role_id=tenant_role_id
+    )
+    
+    db.add(new_tenant_user)
+    db.commit()
+    db.refresh(new_tenant_user)
+    
+    # Generate Invite Link
+    token_data = {
+        "tenant_id": tenant_id,
+        "user_id": new_user_id,
+        "email": invite_data.email,
+        "action": "invite_acceptance"
+    }
+    invite_token = create_invite_token(token_data)
+    
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    invite_link = f"{frontend_url}/auth/set-password?invite_token={invite_token}"
+    
+    # Send Email
+    email_service = EmailService()
+    email_sent = email_service.send_invite_email(invite_data.email, invite_link)
+    
+    if not email_sent:
+        # We might want to warn the caller but still return the user
+        # Or rollback? For now, we return the user but log failure (handled in service)
+        pass
+        
+    return _enrich_user(new_tenant_user)
+
+
+@router.post("/users/invite-bulk", status_code=status.HTTP_200_OK)
+async def invite_tenant_users_bulk(
+    invite_data: TenantUserBulkInvite,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Invite multiple users to the tenant with the same role.
+    
+    Returns a summary of successful and failed invites.
+    
+    Requires: TENANT_MANAGE_USERS permission
+    """
+    rbac = RBACService(db)
+    tenant_id = current_user["tenant_id"]
+    
+    # Check permission
+    rbac.require_permission(
+        tenant_id=tenant_id,
+        user_id=current_user["user_id"],
+        permission=Permission.TENANT_MANAGE_USERS
+    )
+    
+    # Validate role
+    role = db.query(TenantRole).filter(
+        TenantRole.id == invite_data.role_id,
+        TenantRole.tenant_id == tenant_id
+    ).first()
+    
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid role_id"
+        )
+    
+    results = {
+        "successful": [],
+        "failed": []
+    }
+    
+    email_service = EmailService()
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8501")
+    
+    for email in invite_data.emails:
+        try:
+            # Check if user exists
+            existing_user = db.query(TenantUser).filter(
+                TenantUser.tenant_id == tenant_id,
+                TenantUser.email == email
+            ).first()
+            
+            if existing_user:
+                results["failed"].append({"email": email, "reason": "User already exists"})
+                continue
+                
+            # Create user
+            new_user_id = str(uuid.uuid4())
+            new_tenant_user = TenantUser(
+                tenant_id=tenant_id,
+                user_id=new_user_id,
+                email=email,
+                full_name=None, # Name not provided in bulk
+                password_hash=None,
+                is_active=True,
+                tenant_role_id=role.id
+            )
+            
+            db.add(new_tenant_user)
+            db.flush() # Flush to check for constraints before commit
+            
+            # Generate Token
+            token_data = {
+                "tenant_id": tenant_id,
+                "user_id": new_user_id,
+                "email": email,
+                "action": "invite_acceptance"
+            }
+            invite_token = create_invite_token(token_data)
+            invite_link = f"{frontend_url}/auth/set-password?invite_token={invite_token}"
+            
+            # Send Email
+            if email_service.send_invite_email(email, invite_link):
+                results["successful"].append(email)
+            else:
+                # If email fails, we still created the user, but maybe we should warn
+                results["failed"].append({"email": email, "reason": "Email delivery failed"})
+                
+        except Exception as e:
+            db.rollback()
+            results["failed"].append({"email": email, "reason": str(e)})
+            continue
+            
+    db.commit()
+    return results
+
+
 @router.get("/users", response_model=List[TenantUserResponse])
 async def list_tenant_users(
     db: Session = Depends(get_db),
@@ -145,7 +339,10 @@ async def get_tenant_user(
     
     user = db.query(TenantUser).filter(
         TenantUser.tenant_id == tenant_id,
-        TenantUser.user_id == user_id
+        or_(
+            TenantUser.user_id == user_id,
+            TenantUser.id == user_id
+        )
     ).first()
     
     if not user:
@@ -179,7 +376,10 @@ async def update_tenant_user(
     
     user = db.query(TenantUser).filter(
         TenantUser.tenant_id == tenant_id,
-        TenantUser.user_id == user_id
+        or_(
+            TenantUser.user_id == user_id,
+            TenantUser.id == user_id
+        )
     ).first()
     
     if not user:
@@ -240,7 +440,10 @@ async def delete_tenant_user(
 
     user = db.query(TenantUser).filter(
         TenantUser.tenant_id == tenant_id,
-        TenantUser.user_id == user_id
+        or_(
+            TenantUser.user_id == user_id,
+            TenantUser.id == user_id
+        )
     ).first()
     
     if not user:

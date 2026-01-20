@@ -406,3 +406,47 @@ async def logout(
         "message": "Logged out successfully",
         "detail": "Refresh token cookie cleared. Please remove access token from client storage."
     }
+
+
+class SetPasswordRequest(BaseModel):
+    token: str
+    password: str
+
+
+@router.post("/auth/set-password", tags=["Authentication"])
+async def set_password_endpoint(
+    request: SetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Set password for a user using an invitation token.
+    """
+    # Verify token
+    try:
+        from ..auth.jwt_handler import verify_token
+        payload = verify_token(request.token, token_type="invite")
+    except HTTPException:
+         raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired invitation token"
+        )
+    
+    tenant_id = payload.get("tenant_id")
+    user_id = payload.get("user_id")
+    
+    # Update user password
+    user = db.query(TenantUser).filter(
+        TenantUser.tenant_id == tenant_id,
+        TenantUser.user_id == user_id
+    ).first()
+    
+    if not user:
+         raise HTTPException(status_code=404, detail="User not found")
+         
+    # Hash password
+    import bcrypt
+    password_hash = bcrypt.hashpw(request.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    user.password_hash = password_hash
+    db.commit()
+    
+    return {"message": "Password set successfully. You can now login."}
