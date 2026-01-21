@@ -19,7 +19,7 @@ export default function SuperAdminLoginPage() {
     setError('');
 
     try {
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000/api/v1';
       const response = await fetch(`${apiUrl}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -46,7 +46,7 @@ export default function SuperAdminLoginPage() {
       if (data.refresh_token) {
         localStorage.setItem('refresh_token', data.refresh_token);
       }
-      
+
       // Create user object from response data
       const user = {
         id: data.user_id,
@@ -55,9 +55,9 @@ export default function SuperAdminLoginPage() {
         tenant_id: data.tenant_id,
         name: data.name || 'Super Admin',
       };
-      
+
       localStorage.setItem('user', JSON.stringify(user));
-      
+
       if (rememberMe) {
         localStorage.setItem('remember_me', 'true');
       }

@@ -12,7 +12,7 @@ def main():
         sys.executable, "-m", "uvicorn",
         "app.main:app",
         "--host", "127.0.0.1",
-        "--port", "8000"
+        "--port", "9000"
         # Note: --reload is omitted as it can cause issues with subprocess management.
         # For development, it's often better to run the backend separately with --reload.
     ]
@@ -42,7 +42,7 @@ def main():
         print(f"Frontend process started with PID: {frontend_proc.pid}")
         
         print("\n--- Both applications are running. ---")
-        print("Backend (API) is at: http://127.0.0.1:8000")
+        print("Backend (API) is at: http://127.0.0.1:9000")
         print("Frontend (UI) is at: http://127.0.0.1:8501")
         print("\nPress Ctrl+C to stop both applications.")
 

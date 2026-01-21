@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8001/api/v1/auth/callback"
+    GOOGLE_REDIRECT_URI: str = "http://localhost:9001/api/v1/auth/callback"
     
     class Config:
         case_sensitive = True
