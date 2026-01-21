@@ -40,7 +40,10 @@ async def get_gmail_auth_url(
     )
     
     auth_service = GmailAuthService(db)
-    auth_url = auth_service.get_authorization_url(current_user["tenant_id"])
+    auth_url = auth_service.get_authorization_url(
+        tenant_id=current_user["tenant_id"],
+        user_id=current_user["user_id"]
+    )
     
     return {"auth_url": auth_url}
 
@@ -64,10 +67,37 @@ async def gmail_auth_callback(
     
     auth_service = GmailAuthService(db)
     try:
-        result = auth_service.exchange_code_for_token(request.code, current_user["tenant_id"])
+        result = auth_service.exchange_code_for_token(
+            code=request.code, 
+            tenant_id=current_user["tenant_id"],
+            user_id=current_user["user_id"]
+        )
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/status")
+async def get_gmail_status(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Check if Gmail is connected for the current tenant.
+    """
+    tenant_id = current_user["tenant_id"]
+    user_id = current_user["user_id"]
+    auth_service = GmailAuthService(db)
+    creds = auth_service.get_credentials(tenant_id, user_id)
+    
+    if not creds:
+        return {"connected": False, "email": None}
+        
+    try:
+        email = auth_service._get_user_email(creds)
+        return {"connected": True, "email": email}
+    except Exception:
+        return {"connected": False, "email": None, "error": "Token invalid or expired"}
 
 # --- Recipient Management ---
 
@@ -85,7 +115,8 @@ async def list_recipients(
     )
     
     recipients = db.query(GmailRecipient).filter(
-        GmailRecipient.tenant_id == current_user["tenant_id"]
+        GmailRecipient.tenant_id == current_user["tenant_id"],
+        GmailRecipient.user_id == current_user["user_id"]
     ).all()
     return recipients
 
@@ -105,6 +136,7 @@ async def create_recipient(
     
     new_recipient = GmailRecipient(
         tenant_id=current_user["tenant_id"],
+        user_id=current_user["user_id"],
         email_address=recipient_data.email_address,
         display_name=recipient_data.display_name,
         group_name=recipient_data.group_name,
@@ -132,7 +164,8 @@ async def delete_recipient(
     
     recipient = db.query(GmailRecipient).filter(
         GmailRecipient.id == recipient_id,
-        GmailRecipient.tenant_id == current_user["tenant_id"]
+        GmailRecipient.tenant_id == current_user["tenant_id"],
+        GmailRecipient.user_id == current_user["user_id"]
     ).first()
     
     if not recipient:
@@ -158,7 +191,8 @@ async def list_schedules(
     )
     
     schedules = db.query(GmailSchedule).filter(
-        GmailSchedule.tenant_id == current_user["tenant_id"]
+        GmailSchedule.tenant_id == current_user["tenant_id"],
+        GmailSchedule.user_id == current_user["user_id"]
     ).all()
     return schedules
 
@@ -178,6 +212,7 @@ async def create_schedule(
     
     new_schedule = GmailSchedule(
         tenant_id=current_user["tenant_id"],
+        user_id=current_user["user_id"],
         name=schedule_data.name,
         schedule_type=schedule_data.schedule_type,
         schedule_config=schedule_data.schedule_config,
@@ -208,7 +243,8 @@ async def sync_schedule_now(
     # 2. Get Schedule
     schedule = db.query(GmailSchedule).filter(
         GmailSchedule.id == schedule_id,
-        GmailSchedule.tenant_id == current_user["tenant_id"]
+        GmailSchedule.tenant_id == current_user["tenant_id"],
+        GmailSchedule.user_id == current_user["user_id"]
     ).first()
     
     if not schedule:
@@ -256,7 +292,8 @@ async def list_messages(
     )
     
     messages = db.query(GmailMessage).filter(
-        GmailMessage.tenant_id == current_user["tenant_id"]
+        GmailMessage.tenant_id == current_user["tenant_id"],
+        GmailMessage.user_id == current_user["user_id"]
     ).order_by(GmailMessage.received_at.desc()).offset(offset).limit(limit).all()
     
     return messages
@@ -282,7 +319,8 @@ async def delete_message(
     # 1. Find the message
     message = db.query(GmailMessage).filter(
         GmailMessage.id == message_id,
-        GmailMessage.tenant_id == current_user["tenant_id"]
+        GmailMessage.tenant_id == current_user["tenant_id"],
+        GmailMessage.user_id == current_user["user_id"]
     ).first()
     
     if not message:

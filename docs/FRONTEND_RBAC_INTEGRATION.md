@@ -27,6 +27,13 @@ We have refactored the backend to support a robust Role-Based Access Control (RB
 | `GET` | `/api/v1/tenant/roles` | Get available roles | - |
 | `POST` | `/api/v1/tenant/roles` | Create custom role | `{ "name": "...", "permissions": [...] }` |
 
+#### c. Gmail Integration (Isolation & Status)
+| Method | Endpoint | Description | Payload |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/gmail/status` | Check if Gmail is connected | **Returns `{ "connected": bool, "email": string }`** |
+| `GET` | `/api/v1/gmail/auth` | Get Google Auth URL | - |
+| `POST` | `/api/v1/gmail/callback` | Exchange code for token | `{ "code": "..." }` |
+
 #### c. Authentication (Public/Accept Flow)
 | Method | Endpoint | Description | Payload |
 | :--- | :--- | :--- | :--- |
@@ -97,6 +104,14 @@ This page handles the "First Time Login" experience where invited users set thei
 **2. Navigation Menu**
 *   Add **"Users"** or **"Team"** item to the main sidebar.
 *   Protect this item: Hide it if the current user does not have the required permissions.
+
+### D. Gmail Connection Isolation (CRITICAL)
+
+To prevent "Cross-Tenant" leaks (where Org A sees Org B's Gmail connection):
+
+1.  **Don't rely on LocalStorage**: Do NOT save "isGmailConnected" in global local storage. 
+2.  **Always Refresh on Tenant Switch**: Every time the user switches organizations or navigates to the Settings page, you **must** call `GET /api/v1/gmail/status`.
+3.  **Reset State**: When logging out or switching tenants, clear all Gmail-related variables in your Redux/Context/State.
 
 ### Summary of Tasks for Frontend Developer
 1.  Create `UserManagement` page with List and Invite functionalities.
