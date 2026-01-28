@@ -16,7 +16,7 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_ENVIRONMENT=$VITE_ENVIRONMENT
 ENV VITE_BYPASS_AUTH=$VITE_BYPASS_AUTH
 
-EXPOSE 3000
+EXPOSE 9002
 
 # Run in dev mode for easy local testing without Nginx
-CMD ["npm", "run", "dev", "--", "--port", "3000", "--host", "0.0.0.0"]
+CMD ["npm", "run", "dev", "--", "--port", "9002", "--host", "0.0.0.0"]
