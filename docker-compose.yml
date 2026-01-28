@@ -61,7 +61,7 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:9002}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:9002,http://localhost:3001,http://localhost:5173}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:9002,http://localhost:9003,http://localhost:5173}
     volumes:
       - ./ecostance-agent-v1/uploads:/app/uploads
       - ./ecostance-agent-v1/data:/app/data
@@ -123,7 +123,7 @@ services:
     depends_on:
       - crm-backend
     ports:
-      - "3001:3001"
+      - "9003:9003"
     restart: unless-stopped
     networks:
       - app-network

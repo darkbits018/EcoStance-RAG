@@ -27,13 +27,13 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd c-crm-be; . .v
 Write-Host "Starting Ecostance UI Frontend..." -ForegroundColor Yellow
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd ecostance-ui-v1; npm run dev -- --port 9002" -WindowStyle Normal
 
-# 5. Start CRM Frontend (Port 3001)
+# 5. Start CRM Frontend (Port 9003)
 Write-Host "Starting CRM Frontend..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd c-crm-fe; npm run dev -- --port 3001" -WindowStyle Normal
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd c-crm-fe; npm run dev -- --port 9003" -WindowStyle Normal
 
 Write-Host "`nAll services are starting in separate windows." -ForegroundColor Cyan
 Write-Host "Agent Backend: http://localhost:9000"
 Write-Host "CRM Backend:   http://localhost:9001"
 Write-Host "Agent UI:      http://localhost:9002"
-Write-Host "CRM UI:        http://localhost:3001"
+Write-Host "CRM UI:        http://localhost:9003"
 Write-Host "`nMaintain this window to keep environment variables if needed, or close it after services start."

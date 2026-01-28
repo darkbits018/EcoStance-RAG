@@ -2,10 +2,10 @@
 
 ## Overview
 Dockerize the multi-project workspace containing:
-- **ecostance-agent-v1**: Python FastAPI backend (RAG system) - Port 8000
-- **ecostance-ui-v1**: React/Vite frontend - Port 3000
-- **c-crm-be**: Python FastAPI backend (CRM) - Port 8001
-- **c-crm-fe**: React/Vite frontend - Port 3001
+- **ecostance-agent-v1**: Python FastAPI backend (RAG system) - Port 9000
+- **ecostance-ui-v1**: React/Vite frontend - Port 9002
+- **c-crm-be**: Python FastAPI backend (CRM) - Port 9001
+- **c-crm-fe**: React/Vite frontend - Port 9003
 
 ## Architecture
 
@@ -17,14 +17,14 @@ Dockerize the multi-project workspace containing:
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
 │  │ ecostance-ui │  │  c-crm-fe    │  │   nginx      │      │
 │  │   (React)    │  │   (React)    │  │  (reverse    │      │
-│  │   :3000      │  │   :3001      │  │   proxy)     │      │
+│  │   :9002      │  │   :9003      │  │   proxy)     │      │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
 │         │                  │                  │              │
 │  ┌──────▼───────┐  ┌──────▼───────┐         │              │
 │  │ ecostance-   │  │  c-crm-be    │         │              │
 │  │  agent-v1    │  │  (FastAPI)   │         │              │
-│  │  (FastAPI)   │  │   :8001      │         │              │
-│  │   :8000      │  └──────┬───────┘         │              │
+│  │  (FastAPI)   │  │   :9001      │         │              │
+│  │   :9000      │  └──────┬───────┘         │              │
 │  └──────┬───────┘         │                  │              │
 │         │                  │                  │              │
 │         │          ┌───────▼──────────────────▼──────┐      │
@@ -76,10 +76,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose port
-EXPOSE 8000
+EXPOSE 9000
 
 # Run application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9000"]
 ```
 
 #### c-crm-be/Dockerfile
@@ -102,10 +102,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose port
-EXPOSE 8001
+EXPOSE 9001
 
 # Run application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9001"]
 ```
 
 ### 2.2 Frontend Dockerfiles
@@ -136,7 +136,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 3000
+EXPOSE 9002
 
 CMD ["nginx", "-g", "daemon off;"]
 ```
@@ -167,7 +167,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 3001
+EXPOSE 9003
 
 CMD ["nginx", "-g", "daemon off;"]
 ```
@@ -215,9 +215,9 @@ services:
       - ./ecostance-agent-v1/uploads:/app/uploads
       - ./ecostance-agent-v1/data:/app/data
     ports:
-      - "8000:8000"
+      - "9000:9000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -238,9 +238,9 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "8001:8001"
+      - "9001:9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:9001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -256,7 +256,7 @@ services:
     depends_on:
       - ecostance-agent
     ports:
-      - "3000:3000"
+      - "9002:9002"
 
   # CRM Frontend
   crm-frontend:
@@ -264,12 +264,12 @@ services:
       context: ./c-crm-fe
       dockerfile: Dockerfile
       args:
-        - VITE_CRM_API_BASE_URL=${VITE_CRM_API_BASE_URL:-http://localhost:8001/api/v1}
+        - VITE_CRM_API_BASE_URL=${VITE_CRM_API_BASE_URL:-http://localhost:9001/api/v1}
     container_name: crm-frontend
     depends_on:
       - crm-backend
     ports:
-      - "3001:3001"
+      - "9003:9003"
 
 volumes:
   postgres_data:
@@ -443,8 +443,8 @@ curl http://localhost:8000/health
 curl http://localhost:8001/health
 
 # Test frontends
-curl http://localhost:3000
-curl http://localhost:3001
+curl http://localhost:9002
+curl http://localhost:9003
 ```
 
 ## Phase 10: Production Optimization
