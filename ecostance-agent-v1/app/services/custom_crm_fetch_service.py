@@ -8,7 +8,7 @@ class CustomCRMFetchService:
     """
     Service to fetch emails from the Custom CRM API.
     """
-    def __init__(self, base_url: str = "http://localhost:8001/api/v1"):
+    def __init__(self, base_url: str = "http://localhost:9001/api/v1"):
         self.base_url = base_url
         self.client = httpx.Client(base_url=base_url, timeout=30.0)
 

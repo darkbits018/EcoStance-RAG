@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, DateTime, Text
 from datetime import datetime
 from typing import Optional
-from sqlmodel import SQLModel, Field
+
 import uuid
 from ..db.database import Base
 

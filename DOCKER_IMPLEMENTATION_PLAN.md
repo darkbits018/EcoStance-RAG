@@ -295,7 +295,7 @@ server {
     }
 
     location /api {
-        proxy_pass http://ecostance-agent:8000;
+        proxy_pass http://ecostance-agent:9000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -321,7 +321,7 @@ server {
     }
 
     location /api {
-        proxy_pass http://crm-backend:8001;
+        proxy_pass http://crm-backend:9001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -437,10 +437,10 @@ docker-compose down -v
 docker-compose ps
 
 # Test ecostance-agent API
-curl http://localhost:8000/health
+curl http://localhost:9000/health
 
 # Test CRM API
-curl http://localhost:8001/health
+curl http://localhost:9001/health
 
 # Test frontends
 curl http://localhost:9002

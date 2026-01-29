@@ -54,7 +54,7 @@ def run_custom_crm_sync(tenant_id: str, db: Session):
         session = SessionLocal()
         try:
             # 1. Fetch
-            fetch_service = CustomCRMFetchService() # Defaults to localhost:8001
+            fetch_service = CustomCRMFetchService() # Defaults to localhost:9001
             emails = fetch_service.fetch_emails()
             
             # 2. Process (RAG)

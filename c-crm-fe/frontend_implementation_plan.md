@@ -45,7 +45,7 @@ c-crm-fe/
 ### 4.1. Authentication & Connections
 - **Goal**: Manage Google OAuth connections.
 - **UI**:
-    - A "Connect Gmail" button that redirects to `http://localhost:8000/api/v1/auth/login`.
+    - A "Connect Gmail" button that redirects to `http://localhost:9000/api/v1/auth/login`.
     - List of active connections (e.g., "Connected as bob@example.com").
     - Status indicators (Active/Expired).
 
