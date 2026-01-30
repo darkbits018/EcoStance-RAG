@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 from app.db.database import get_db
-from app.auth.dependencies import require_admin
+from app.auth.dependencies import require_admin, require_super_admin
 from app.services.cleanup_service import CleanupService
 from app.services.admin_service import AdminService
 from app.config import QDRANT_URL, QDRANT_API_KEY
@@ -36,7 +36,7 @@ def get_qdrant_client():
 async def delete_tenant(
     tenant_id: str,
     request: TenantDeletionRequest,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -85,7 +85,7 @@ async def export_tenant_data(
     tenant_id: str,
     request: DataExportRequest,
     background_tasks: BackgroundTasks,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -132,7 +132,7 @@ async def export_tenant_data(
 @router.get("/tenants/{tenant_id}/storage")
 async def get_tenant_storage(
     tenant_id: str,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -161,7 +161,7 @@ async def get_tenant_storage(
 @router.post("/cleanup/sessions")
 async def cleanup_sessions(
     max_age_hours: int = 24,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -191,7 +191,7 @@ async def cleanup_sessions(
 @router.post("/cleanup/temp-files")
 async def cleanup_temp_files(
     max_age_days: int = 7,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -221,7 +221,7 @@ async def cleanup_temp_files(
 @router.post("/cleanup/audit-logs")
 async def archive_audit_logs(
     max_age_days: int = 90,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -251,7 +251,7 @@ async def archive_audit_logs(
 @router.post("/cleanup/all")
 async def run_daily_cleanup(
     background_tasks: BackgroundTasks,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -282,7 +282,7 @@ async def run_daily_cleanup(
 
 @router.get("/health/system")
 async def get_system_health(
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -310,7 +310,7 @@ async def get_system_health(
 
 @router.get("/dashboard/summary")
 async def get_dashboard_summary(
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -338,7 +338,7 @@ async def search_tenants(
     status: Optional[str] = None,
     tier: Optional[str] = None,
     limit: int = 20,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -374,7 +374,7 @@ async def search_tenants(
 async def update_tenant_tier(
     tenant_id: str,
     tier: str,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -469,7 +469,7 @@ async def update_tenant_tier(
 async def suspend_tenant(
     tenant_id: str,
     reason: str,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -524,7 +524,7 @@ async def suspend_tenant(
 @router.post("/tenants/{tenant_id}/reactivate")
 async def reactivate_tenant(
     tenant_id: str,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -577,7 +577,7 @@ async def reactivate_tenant(
 async def get_tenant_activity(
     tenant_id: str,
     days: int = 7,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -669,7 +669,7 @@ async def get_tenant_activity(
 
 @router.get("/quotas/templates")
 async def get_quota_templates(
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -729,7 +729,7 @@ async def get_quota_templates(
 async def update_quota_template(
     tier: str,
     quotas: Dict[str, Any],
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -759,7 +759,7 @@ async def update_quota_template(
 async def update_tenant_quotas(
     tenant_id: str,
     quotas: Dict[str, Any],
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -808,7 +808,7 @@ async def get_audit_logs(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     limit: int = 100,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -890,7 +890,7 @@ async def get_audit_logs(
 @router.get("/audit-logs/{log_id}")
 async def get_audit_log_detail(
     log_id: str,
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -924,7 +924,7 @@ async def get_audit_log_detail(
 
 @router.get("/settings")
 async def get_admin_settings(
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -974,7 +974,7 @@ async def get_admin_settings(
 @router.put("/settings")
 async def update_admin_settings(
     settings: Dict[str, Any],
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
