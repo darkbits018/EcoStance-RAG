@@ -113,13 +113,28 @@ Directives:
 Rappelez-vous: Répondez toujours dans la langue du client et terminez par une conclusion appropriée dans cette langue."""
 }
 
+# Strict whitelist for multilingual agent tools
+SAFE_MULTILINGUAL_CATEGORIES = {
+    "tracking", "customer_search", "payments", "complaints", "delivery_estimates", 
+    "knowledge_base", "language_detection"
+}
+
 class MultilingualAgentService:
     """Multilingual agent service with language-aware capabilities."""
     
-    def __init__(self, tenant_id: str = None, db_session=None, llm_provider: str = None, model: str = None):
+    def __init__(self, tenant_id: str = None, db_session=None, llm_provider: str = None, 
+                 model: str = None, allowed_tools: List[str] = None):
         self.tenant_id = tenant_id
         self.db_session = db_session
         
+        # Validate allowed tools
+        requested_tools = allowed_tools if allowed_tools is not None else list(SAFE_MULTILINGUAL_CATEGORIES)
+        self.allowed_tools = [t for t in requested_tools if t in SAFE_MULTILINGUAL_CATEGORIES]
+        
+        if not self.allowed_tools:
+            logger.warning(f"No safe tools found for Multilingual agent: {requested_tools}. Using default set.")
+            self.allowed_tools = ["tracking", "knowledge_base", "language_detection"]
+
         # Check if multilingual features should be used
         self.use_multilingual = should_use_multilingual_service(tenant_id)
         
@@ -154,27 +169,31 @@ class MultilingualAgentService:
                 logger.error(f"Fallback to Gemini also failed: {fallback_error}")
                 raise ValueError("No LLM provider could be initialized. Please check your API keys.")
         
-        # Define available tools
-        base_tools = [
-            get_shipment_status,
-            search_shipments_by_customer,
-            track_by_tracking_number,
-            get_delivery_estimate,
-            check_cod_payment_status,
-            get_complaint_status,
-        ]
+        # Build validated tool list
+        self.tools = []
         
-        # Add multilingual KB tools if tenant_id is provided
+        # Shipment/DB Tools
+        if "tracking" in self.allowed_tools:
+            self.tools.extend([get_shipment_status, track_by_tracking_number])
+        if "customer_search" in self.allowed_tools:
+            self.tools.append(search_shipments_by_customer)
+        if "delivery_estimates" in self.allowed_tools:
+            self.tools.append(get_delivery_estimate)
+        if "payments" in self.allowed_tools:
+            self.tools.append(check_cod_payment_status)
+        if "complaints" in self.allowed_tools:
+            self.tools.append(get_complaint_status)
+            
+        # Multilingual Tools
         if tenant_id:
-            multilingual_tools = [
-                create_multilingual_search_tool(tenant_id),
-                create_multilingual_list_tool(tenant_id),
-                create_language_detection_tool(),
-                create_cross_language_search_tool(tenant_id)
-            ]
-            self.tools = base_tools + multilingual_tools
-        else:
-            self.tools = base_tools
+            if "knowledge_base" in self.allowed_tools:
+                self.tools.extend([
+                    create_multilingual_search_tool(tenant_id),
+                    create_multilingual_list_tool(tenant_id),
+                    create_cross_language_search_tool(tenant_id)
+                ])
+            if "language_detection" in self.allowed_tools:
+                self.tools.append(create_language_detection_tool())
         
         # Create a tool map for easy lookup
         self.tool_map = {tool.name: tool for tool in self.tools}

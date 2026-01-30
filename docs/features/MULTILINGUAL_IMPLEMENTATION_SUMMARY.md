@@ -38,7 +38,7 @@ Complete multilingual support has been implemented across both the `app` (docume
 **File:** `app/config/multilingual_app_config.py`
 - Centralized configuration
 - Feature flags for gradual rollout
-- Tenant-specific whitelisting
+- Tenant-level feature control (via database `settings.features`)
 - Language tier definitions
 - Performance tuning parameters
 - Initialization helpers
@@ -148,8 +148,8 @@ Both can coexist, automatic routing based on tenant config
 MULTILINGUAL_ENABLED=true
 EMBEDDING_MODEL_TYPE=bge-m3
 
-# Tenant whitelist (empty = all tenants)
-TENANT_MULTILINGUAL_WHITELIST=tenant_123,tenant_456
+# Note: Individual tenant control is managed via database settings:
+# tenant.settings = {"features": ["multilingual", ...]}
 
 # BGE-M3 Configuration
 BGE_M3_BATCH_SIZE=32
@@ -314,14 +314,13 @@ print(status)
 ## 🔄 Migration Path
 
 ### **Phase 1: Enable for New Tenants**
-```env
 MULTILINGUAL_ENABLED=true
-TENANT_MULTILINGUAL_WHITELIST=new_tenant_1,new_tenant_2
-```
+# Enable specific feature for tenant in database
+# update tenants set settings = jsonb_set(settings, '{features}', settings->'features' || '["multilingual"]') where id = 'tenant_id';
 
 ### **Phase 2: Test with Existing Tenants**
 ```python
-# Add tenant to whitelist
+# Enable for tenant (this updates the database features list)
 service.enable_for_tenant("existing_tenant_123")
 
 # Re-upload documents to create multilingual collections
@@ -331,7 +330,7 @@ service.enable_for_tenant("existing_tenant_123")
 ### **Phase 3: Gradual Rollout**
 - Monitor performance and accuracy
 - Collect user feedback
-- Expand whitelist gradually
+- Enable for more tenants via database settings
 - Keep legacy system as fallback
 
 ### **Phase 4: Full Migration**
@@ -387,8 +386,8 @@ numpy>=1.21.0
 
 3. **Test with Sample Tenant**
    ```python
-   # Enable for test tenant
-   TENANT_MULTILINGUAL_WHITELIST=test_tenant_id
+   # Enable 'multilingual' feature for test tenant in database
+# This can be done via Admin API or direct DB update
    ```
 
 4. **Upload Test Documents**

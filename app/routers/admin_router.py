@@ -425,14 +425,16 @@ async def update_tenant_tier(
                 "max_queries_per_day": 20000,
                 "max_queries_per_month": 600000,
                 "max_documents": 200000,
-                "max_db_connections": 25
+                "max_db_connections": 25,
+                "features": ["rag", "db_chat", "custom_embeddings", "api_access", "priority_support", "multilingual"]
             },
             "enterprise": {
                 "max_storage_bytes": 1000 * 1024**3,  # 1TB
                 "max_queries_per_day": 100000,
                 "max_queries_per_month": 3000000,
                 "max_documents": 1000000,
-                "max_db_connections": 100
+                "max_db_connections": 100,
+                "features": ["rag", "db_chat", "custom_embeddings", "api_access", "priority_support", "sla", "dedicated_support", "multilingual"]
             }
         }
         
@@ -703,7 +705,7 @@ async def get_quota_templates(
             "max_documents": 200000,
             "max_db_connections": 25,
             "max_users": 50,
-            "features": ["rag", "db_chat", "custom_embeddings", "api_access", "priority_support"]
+            "features": ["rag", "db_chat", "custom_embeddings", "api_access", "priority_support", "multilingual"]
         },
         "enterprise": {
             "tier": "enterprise",
@@ -713,7 +715,7 @@ async def get_quota_templates(
             "max_documents": 1000000,
             "max_db_connections": 100,
             "max_users": -1,  # Unlimited
-            "features": ["rag", "db_chat", "custom_embeddings", "api_access", "priority_support", "sla", "dedicated_support"]
+            "features": ["rag", "db_chat", "custom_embeddings", "api_access", "priority_support", "sla", "dedicated_support", "multilingual"]
         }
     }
     

@@ -26,8 +26,11 @@ GUIDELINES:
 4. If you don't know the answer, say so.
 """
 
+# Strict whitelist of allowed tools for Generic agent
+SAFE_GENERIC_TOOLS = {"knowledge_base", "database_query"}
+
 class GenericAgentService:
-    def __init__(self, tenant_id: str = None, **kwargs):
+    def __init__(self, tenant_id: str = None, allowed_tools: List[str] = None, **kwargs):
         self.llm = ChatGoogleGenerativeAI(
             model=AGENT_MODEL,
             google_api_key=GOOGLE_API_KEY,
@@ -35,16 +38,29 @@ class GenericAgentService:
         )
         self.tenant_id = tenant_id
         
-        # Build tools
-        self.tools = [
-            create_search_knowledge_base_tool(tenant_id),
-            create_list_knowledge_bases_tool(tenant_id)
-        ]
+        # Validate allowed tools
+        requested_tools = allowed_tools if allowed_tools is not None else ["knowledge_base", "database_query"]
+        self.allowed_tools = [t for t in requested_tools if t in SAFE_GENERIC_TOOLS]
         
-        # Check for DB path in kwargs or environment
-        db_path = kwargs.get('database_connection')
-        if db_path:
-             self.tools.append(create_db_query_tool(db_path))
+        if not self.allowed_tools:
+            logger.warning(f"No safe tools found for Generic agent in: {requested_tools}. Using default tools.")
+            self.allowed_tools = ["knowledge_base"] # Always fallback to KB at least
+
+        # Build tools list with validation
+        self.tools = []
+        
+        # Add KB tools if white-listed
+        if "knowledge_base" in self.allowed_tools:
+            self.tools.extend([
+                create_search_knowledge_base_tool(tenant_id),
+                create_list_knowledge_bases_tool(tenant_id)
+            ])
+        
+        # Add DB tool if white-listed AND db_path is provided
+        if "database_query" in self.allowed_tools:
+            db_path = kwargs.get('database_connection')
+            if db_path:
+                 self.tools.append(create_db_query_tool(db_path))
              
         self.tool_map = {tool.name: tool for tool in self.tools}
         self.conversations: Dict[str, List[Dict]] = {}

@@ -52,8 +52,11 @@ Your goal is to help customers find products and check their orders.
 - User Context: You have access to the user's ID. If they want to track an order but no user_id is provided, ask them to log in.
 """
 
+# Strict whitelist of allowed tools for E-Commerce agent
+SAFE_TOOL_WHITELIST = {"product_search", "categories", "orders"}
+
 class EcommerceAgentService:
-    def __init__(self, tenant_id: str = None, **kwargs):
+    def __init__(self, tenant_id: str = None, allowed_tools: List[str] = None, **kwargs):
         self.llm = ChatGoogleGenerativeAI(
             model=AGENT_MODEL,
             google_api_key=GOOGLE_API_KEY,
@@ -61,11 +64,26 @@ class EcommerceAgentService:
         )
         self.tenant_id = tenant_id
         
-        # Define available tools
-        self.tools = [find_products, get_all_categories, get_my_orders]
+        # Validate allowed tools
+        requested_tools = allowed_tools if allowed_tools is not None else ["product_search", "categories", "orders"]
+        self.allowed_tools = [t for t in requested_tools if t in SAFE_TOOL_WHITELIST]
+        
+        if not self.allowed_tools:
+            logger.warning(f"No safe tools found for Ecommerce agent in: {requested_tools}. Using all safe tools.")
+            self.allowed_tools = list(SAFE_TOOL_WHITELIST)
+
+        # Map tools to internal objects with safety check
+        self.tools = []
+        if "product_search" in self.allowed_tools:
+            self.tools.append(find_products)
+        if "categories" in self.allowed_tools:
+            self.tools.append(get_all_categories)
+        if "orders" in self.allowed_tools:
+            self.tools.append(get_my_orders)
+            
         self.tool_map = {tool.name: tool for tool in self.tools}
         
-        # In-memory conversation storage (Replace with Redis/DB in production)
+        # In-memory conversation storage
         self.conversations: Dict[str, List[Dict]] = {}
         
     def _is_out_of_scope(self, message: str) -> bool:

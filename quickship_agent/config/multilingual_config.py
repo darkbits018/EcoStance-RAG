@@ -14,9 +14,8 @@ MULTILINGUAL_ENABLED = os.getenv("MULTILINGUAL_ENABLED", "false").lower() == "tr
 EMBEDDING_MODEL_TYPE = os.getenv("EMBEDDING_MODEL_TYPE", "huggingface")  # huggingface or bge-m3
 FALLBACK_TO_LEGACY = os.getenv("FALLBACK_TO_LEGACY", "true").lower() == "true"
 
-# Tenant whitelist for multilingual features (comma-separated)
-TENANT_MULTILINGUAL_WHITELIST = os.getenv("TENANT_MULTILINGUAL_WHITELIST", "").split(",")
-TENANT_MULTILINGUAL_WHITELIST = [t.strip() for t in TENANT_MULTILINGUAL_WHITELIST if t.strip()]
+# Note: Individual tenant control is now managed via the 'multilingual' feature 
+# flag in the tenant.settings JSON in the database.
 
 # --- BGE-M3 Embedding Configuration ---
 BGE_M3_MODEL_NAME = "BAAI/bge-m3"
@@ -60,16 +59,51 @@ MULTILINGUAL_LOG_LEVEL = os.getenv("MULTILINGUAL_LOG_LEVEL", "INFO")
 LOG_LANGUAGE_DETECTION = os.getenv("LOG_LANGUAGE_DETECTION", "true").lower() == "true"
 LOG_CROSS_LANGUAGE_RETRIEVAL = os.getenv("LOG_CROSS_LANGUAGE_RETRIEVAL", "true").lower() == "true"
 
-def is_tenant_multilingual_enabled(tenant_id: str) -> bool:
-    """Check if multilingual features are enabled for a specific tenant."""
+def is_tenant_multilingual_enabled(tenant_id: str, db=None) -> bool:
+    """
+    Check if multilingual features are enabled for a specific tenant.
+    
+    This replaces the dual control (global flag + whitelist) with 
+    global flag + specific tenant feature level check.
+    """
     if not MULTILINGUAL_ENABLED:
         return False
     
-    # If whitelist is empty, enable for all tenants
-    if not TENANT_MULTILINGUAL_WHITELIST:
-        return True
-    
-    return tenant_id in TENANT_MULTILINGUAL_WHITELIST
+    if not tenant_id:
+        return False
+        
+    # Use provided session or create a temporary one
+    close_session = False
+    if db is None:
+        try:
+            # QuickShip agent imports from app.db.database
+            import sys
+            import os
+            sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+            from app.db.database import SessionLocal
+            db = SessionLocal()
+            close_session = True
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Could not initialize DB session for multilingual check: {e}")
+            return False
+
+    try:
+        from app.models.tenant import Tenant
+        tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        if not tenant:
+            return False
+            
+        settings = tenant.settings or {}
+        features = settings.get("features", [])
+        return "multilingual" in features
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Error checking multilingual status for tenant {tenant_id}: {e}")
+        return False
+    finally:
+        if close_session:
+            db.close()
 
 def get_multilingual_collection_name(tenant_id: str, kb_name: str) -> str:
     """Generate multilingual collection name for a tenant and knowledge base."""

@@ -30,6 +30,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/redoc",
         "/openapi.json",
         "/health",
+        "/api/v1/system/health",
         "/api/v1/auth/login",
         "/api/v1/auth/register"
     ]
@@ -94,12 +95,27 @@ class AuthMiddleware(BaseHTTPMiddleware):
         elif x_tenant_id:
             tenant_id = x_tenant_id
             auth_method = "header"
+            
+        # REJECTION LOGIC: If no tenant_id is found for a non-excluded path, reject the request.
+        if not tenant_id:
+            logger.warning(
+                f"Rejected unidentified request: {request.method} {request.url.path} | "
+                f"Client: {request.client.host if request.client else 'Unknown'}"
+            )
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={
+                    "detail": "Identification required. Please provide a valid JWT token in the Authorization header or an X-Tenant-ID header.",
+                    "error": "missing_identification"
+                },
+                headers={"WWW-Authenticate": "Bearer"}
+            )
         
         # Log request with tenant context
         logger.info(
             f"Request: {request.method} {request.url.path} | "
-            f"Tenant: {tenant_id or 'None'} | "
-            f"Auth: {auth_method or 'None'} | "
+            f"Tenant: {tenant_id} | "
+            f"Auth: {auth_method} | "
             f"Client: {request.client.host if request.client else 'Unknown'}"
         )
         

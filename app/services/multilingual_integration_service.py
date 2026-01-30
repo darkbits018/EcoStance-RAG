@@ -127,29 +127,107 @@ class MultilingualIntegrationService:
         
         return status
     
-    def enable_for_tenant(self, tenant_id: str) -> Dict[str, Any]:
-        """Enable multilingual features for a specific tenant."""
-        # This would typically update tenant configuration
-        # For now, just return status
-        return {
-            "tenant_id": tenant_id,
-            "action": "enable_multilingual",
-            "status": "success",
-            "message": f"Multilingual features enabled for tenant {tenant_id}",
-            "capabilities": self.get_tenant_capabilities(tenant_id)
-        }
+    def enable_for_tenant(self, tenant_id: str, db=None) -> Dict[str, Any]:
+        """
+        Enable multilingual features for a specific tenant.
+        Updates the tenant.settings.features list in the database.
+        """
+        close_session = False
+        if db is None:
+            from ..db.database import SessionLocal
+            db = SessionLocal()
+            close_session = True
+            
+        try:
+            from ..models.tenant import Tenant
+            tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+            if not tenant:
+                return {
+                    "tenant_id": tenant_id,
+                    "status": "error",
+                    "message": "Tenant not found"
+                }
+            
+            # Update features list
+            settings = tenant.settings or {}
+            features = settings.get("features", [])
+            if "multilingual" not in features:
+                features.append("multilingual")
+                settings["features"] = features
+                tenant.settings = settings
+                db.commit()
+                message = f"Multilingual features enabled for tenant {tenant_id}"
+            else:
+                message = f"Multilingual features already enabled for tenant {tenant_id}"
+                
+            return {
+                "tenant_id": tenant_id,
+                "action": "enable_multilingual",
+                "status": "success",
+                "message": message,
+                "capabilities": self.get_tenant_capabilities(tenant_id)
+            }
+        except Exception as e:
+            logger.error(f"Error enabling multilingual for tenant {tenant_id}: {e}")
+            return {
+                "tenant_id": tenant_id,
+                "status": "error",
+                "message": str(e)
+            }
+        finally:
+            if close_session:
+                db.close()
     
-    def disable_for_tenant(self, tenant_id: str) -> Dict[str, Any]:
-        """Disable multilingual features for a specific tenant."""
-        # This would typically update tenant configuration
-        # For now, just return status
-        return {
-            "tenant_id": tenant_id,
-            "action": "disable_multilingual",
-            "status": "success",
-            "message": f"Multilingual features disabled for tenant {tenant_id}",
-            "capabilities": self.get_tenant_capabilities(tenant_id)
-        }
+    def disable_for_tenant(self, tenant_id: str, db=None) -> Dict[str, Any]:
+        """
+        Disable multilingual features for a specific tenant.
+        Removes 'multilingual' from the tenant.settings.features list.
+        """
+        close_session = False
+        if db is None:
+            from ..db.database import SessionLocal
+            db = SessionLocal()
+            close_session = True
+            
+        try:
+            from ..models.tenant import Tenant
+            tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+            if not tenant:
+                return {
+                    "tenant_id": tenant_id,
+                    "status": "error",
+                    "message": "Tenant not found"
+                }
+            
+            # Update features list
+            settings = tenant.settings or {}
+            features = settings.get("features", [])
+            if "multilingual" in features:
+                features.remove("multilingual")
+                settings["features"] = features
+                tenant.settings = settings
+                db.commit()
+                message = f"Multilingual features disabled for tenant {tenant_id}"
+            else:
+                message = f"Multilingual features already disabled for tenant {tenant_id}"
+                
+            return {
+                "tenant_id": tenant_id,
+                "action": "disable_multilingual",
+                "status": "success",
+                "message": message,
+                "capabilities": self.get_tenant_capabilities(tenant_id)
+            }
+        except Exception as e:
+            logger.error(f"Error disabling multilingual for tenant {tenant_id}: {e}")
+            return {
+                "tenant_id": tenant_id,
+                "status": "error",
+                "message": str(e)
+            }
+        finally:
+            if close_session:
+                db.close()
     
     def migrate_tenant_to_multilingual(self, tenant_id: str, collections: List[str] = None) -> Dict[str, Any]:
         """Migrate a tenant's collections to use multilingual embeddings."""
