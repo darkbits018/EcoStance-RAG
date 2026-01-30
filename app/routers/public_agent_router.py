@@ -169,7 +169,19 @@ async def chat_with_public_agent(
             )
         
         # Use the agent service to process the message
-        from quickship_agent.public_agent_service import PublicAgentService as AgentServiceClass
+        from quickship_agent.public_agent_service import PublicAgentService as QuickShipAgent
+        from ecommerce_agent.service import EcommerceAgentService
+        from generic_agent.service import GenericAgentService
+        
+        # Mapping of agent types to service classes
+        AGENT_MAPPING = {
+            "quickship": QuickShipAgent,
+            "ecommerce": EcommerceAgentService,
+            "generic": GenericAgentService,
+        }
+        
+        AgentServiceClass = AGENT_MAPPING.get(config.agent_type, GenericAgentService)
+        logger.info(f"Using agent type: {config.agent_type} for tenant {tenant_id}")
         
         agent = AgentServiceClass(tenant_id=tenant_id, allowed_tools=allowed_tools)
         

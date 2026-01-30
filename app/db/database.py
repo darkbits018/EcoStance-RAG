@@ -13,8 +13,10 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Database URL - can be configured via environment variable
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./tenant_system.db")
+# Database URL - must be configured via environment variable
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set. A hosted PostgreSQL database is required.")
 
 # Connection pool configuration from environment
 DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
@@ -22,28 +24,17 @@ DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
 DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
 DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "3600"))
 
-# Create engine with proper connection pooling
-if "sqlite" in DATABASE_URL:
-    # SQLite configuration
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        echo=False,  # Set to True for SQL query logging
-        pool_pre_ping=True  # Verify connections before using them
-    )
-else:
-    # PostgreSQL/Supabase configuration with connection pooling
-    engine = create_engine(
-        DATABASE_URL,
-        pool_size=DB_POOL_SIZE,  # Maximum number of permanent connections
-        max_overflow=DB_MAX_OVERFLOW,  # Maximum number of temporary connections
-        pool_timeout=DB_POOL_TIMEOUT,  # Timeout for getting a connection from pool
-        pool_recycle=DB_POOL_RECYCLE,  # Recycle connections after X seconds
-        pool_pre_ping=True,  # Verify connections before using them (prevents stale connections)
-        echo=False,  # Set to True for SQL query logging
-        # Additional optimizations
-        pool_use_lifo=True,  # Use LIFO (Last In First Out) for better connection reuse
-    )
+# Create engine with proper connection pooling for PostgreSQL/Supabase/Aiven
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=DB_POOL_SIZE,  # Maximum number of permanent connections
+    max_overflow=DB_MAX_OVERFLOW,  # Maximum number of temporary connections
+    pool_timeout=DB_POOL_TIMEOUT,  # Timeout for getting a connection from pool
+    pool_recycle=DB_POOL_RECYCLE,  # Recycle connections after X seconds
+    pool_pre_ping=True,  # Verify connections before using them
+    echo=False,  # Set to True for SQL query logging
+    pool_use_lifo=True,  # Use LIFO (Last In First Out) for better connection reuse
+)
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

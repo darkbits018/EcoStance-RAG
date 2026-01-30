@@ -87,6 +87,7 @@ class PublicAgentConfigResponse(BaseModel):
     branding: BrandingConfig
     rate_limit: RateLimitConfig
     features: FeaturesConfig
+    agent_type: str = Field("quickship", description="Type of agent (e.g., quickship, ecommerce)")
 
 
 class PublicAgentConfigDisabledResponse(BaseModel):
@@ -134,6 +135,7 @@ class AdminPublicAgentConfigResponse(BaseModel):
     branding: BrandingConfig
     rate_limit: RateLimitConfig
     features: FeaturesConfig
+    agent_type: str = Field("quickship", description="Type of agent (e.g., quickship, ecommerce)")
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     updated_by: Optional[str] = None
@@ -150,6 +152,14 @@ class AdminPublicAgentConfigUpdate(BaseModel):
     branding: BrandingConfig
     rate_limit: RateLimitConfig
     features: FeaturesConfig
+    agent_type: str = Field("quickship", description="Type of agent (e.g., quickship, ecommerce)")
+
+    @validator('agent_type')
+    def validate_agent_type(cls, v):
+        valid_agents = ['quickship', 'ecommerce', 'realestate', 'generic']
+        if v not in valid_agents:
+            raise ValueError(f"Invalid agent type: {v}. Must be one of: {', '.join(valid_agents)}")
+        return v
 
     @validator('allowed_tools')
     def validate_allowed_tools(cls, v):

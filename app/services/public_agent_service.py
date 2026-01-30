@@ -66,7 +66,8 @@ class PublicAgentService:
                     "show_suggested_questions": True,
                     "enable_database_tools": True,
                     "enable_knowledge_base": True
-                })
+                }),
+                agent_type="generic"
             )
             self.db.add(config)
             self.db.commit()
@@ -99,6 +100,7 @@ class PublicAgentService:
         config.branding = json.dumps(update_data.branding.dict())
         config.rate_limit = json.dumps(update_data.rate_limit.dict())
         config.features = json.dumps(update_data.features.dict())
+        config.agent_type = update_data.agent_type
         config.updated_at = datetime.utcnow()
         config.updated_by = updated_by
 
