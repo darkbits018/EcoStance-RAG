@@ -66,7 +66,8 @@ class PublicAgentService:
                     "show_suggested_questions": True,
                     "enable_database_tools": True,
                     "enable_knowledge_base": True
-                })
+                }),
+                agent_type="generic"
             )
             self.db.add(config)
             self.db.commit()
@@ -99,6 +100,7 @@ class PublicAgentService:
         config.branding = json.dumps(update_data.branding.dict())
         config.rate_limit = json.dumps(update_data.rate_limit.dict())
         config.features = json.dumps(update_data.features.dict())
+        config.agent_type = update_data.agent_type
         config.updated_at = datetime.utcnow()
         config.updated_by = updated_by
 
@@ -116,31 +118,40 @@ class PublicAgentService:
         tenant_id: str,
         metadata: Optional[Dict] = None
     ) -> PublicAgentSession:
-        """Get or create an agent session."""
+        """Get or create an agent session. Securely verified by tenant_id."""
         session = self.db.query(PublicAgentSession).filter(
             PublicAgentSession.session_id == session_id
         ).first()
 
-        if not session:
-            session = PublicAgentSession(
-                session_id=session_id,
-                tenant_id=tenant_id,
-                session_metadata=json.dumps(metadata or {})
-            )
-            self.db.add(session)
-            self.db.commit()
-            self.db.refresh(session)
-        else:
+        if session:
+            # Security Check: Ensure session belongs to this tenant
+            if session.tenant_id != tenant_id:
+                logger.warning(f"Security Warning: Tenant {tenant_id} attempted to access session {session_id} belonging to Tenant {session.tenant_id}")
+                raise ValueError("Unauthorized session access")
+            
             # Update last activity
             session.last_activity = datetime.utcnow()
             self.db.commit()
+            return session
 
+        # Create new session if not found
+        session = PublicAgentSession(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            session_metadata=json.dumps(metadata or {})
+        )
+        self.db.add(session)
+        self.db.commit()
+        self.db.refresh(session)
         return session
 
-    def update_session_activity(self, session_id: str, is_query: bool = False):
-        """Update session activity timestamp and counters."""
+    def update_session_activity(self, session_id: str, tenant_id: str, is_query: bool = False):
+        """Update session activity timestamp and counters with tenant verification."""
         session = self.db.query(PublicAgentSession).filter(
-            PublicAgentSession.session_id == session_id
+            and_(
+                PublicAgentSession.session_id == session_id,
+                PublicAgentSession.tenant_id == tenant_id
+            )
         ).first()
 
         if session:
@@ -150,15 +161,18 @@ class PublicAgentService:
                 session.query_count += 1
             self.db.commit()
 
-    def get_session(self, session_id: str) -> Optional[PublicAgentSession]:
-        """Get session by ID."""
-        return self.db.query(PublicAgentSession).filter(
+    def get_session(self, session_id: str, tenant_id: str = None) -> Optional[PublicAgentSession]:
+        """Get session by ID with optional tenant filtering."""
+        query = self.db.query(PublicAgentSession).filter(
             PublicAgentSession.session_id == session_id
-        ).first()
+        )
+        if tenant_id:
+            query = query.filter(PublicAgentSession.tenant_id == tenant_id)
+        return query.first()
 
-    def is_session_expired(self, session_id: str, hours: int = 24) -> bool:
-        """Check if session has expired."""
-        session = self.get_session(session_id)
+    def is_session_expired(self, session_id: str, tenant_id: str, hours: int = 24) -> bool:
+        """Check if session has expired, scoped to tenant."""
+        session = self.get_session(session_id, tenant_id)
         if not session:
             return True
         
@@ -193,10 +207,13 @@ class PublicAgentService:
         self.db.refresh(message)
         return message
 
-    def get_session_messages(self, session_id: str) -> List[PublicAgentMessage]:
-        """Get all messages for a session."""
+    def get_session_messages(self, session_id: str, tenant_id: str) -> List[PublicAgentMessage]:
+        """Get all messages for a session, filtered by tenant for security."""
         return self.db.query(PublicAgentMessage).filter(
-            PublicAgentMessage.session_id == session_id
+            and_(
+                PublicAgentMessage.session_id == session_id,
+                PublicAgentMessage.tenant_id == tenant_id
+            )
         ).order_by(PublicAgentMessage.timestamp).all()
 
     def update_message_feedback(

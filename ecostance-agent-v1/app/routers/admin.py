@@ -13,6 +13,7 @@ from app.auth.rbac import RBACService
 from app.auth.permissions import Permission, SystemRole
 from app.models.tenant import Tenant
 from app.models.tenant_user import TenantUser
+from app.auth.dependencies import require_super_admin, get_current_user
 
 router = APIRouter(prefix="/api/v1/admin", tags=["System Administration"])
 
@@ -35,22 +36,14 @@ class TenantSummary(BaseModel):
         from_attributes = True
 
 
-def get_current_user_info():
-    """
-    Placeholder for getting current user info from JWT token.
-    In a real implementation, this would extract user_id and tenant_id from the JWT token.
-    """
-    # TODO: Implement JWT token extraction
-    return {
-        "user_id": "current-user-id",
-        "tenant_id": "current-tenant-id"
-    }
+# Removed insecure placeholder get_current_user_info
 
 
 @router.get("/tenants", response_model=List[TenantSummary])
 async def list_all_tenants(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user_info)
+    current_user: dict = Depends(get_current_user),
+    _: str = Depends(require_super_admin)
 ):
     """
     List all tenants in the system.
@@ -99,7 +92,8 @@ async def list_all_tenants(
 async def list_tenant_users_admin(
     tenant_id: str,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user_info)
+    current_user: dict = Depends(get_current_user),
+    _: str = Depends(require_super_admin)
 ):
     """
     List all users in a specific tenant (Super Admin view).
@@ -181,7 +175,8 @@ async def promote_user_to_admin(
     tenant_id: str,
     request: PromoteUserRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user_info)
+    current_user: dict = Depends(get_current_user),
+    _: str = Depends(require_super_admin)
 ):
     """
     Promote a user to tenant admin or super admin.
@@ -243,7 +238,8 @@ async def promote_user_to_admin(
 @router.get("/system/roles")
 async def view_system_role_assignments(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user_info)
+    current_user: dict = Depends(get_current_user),
+    _: str = Depends(require_super_admin)
 ):
     """
     View all system role assignments across all tenants.
@@ -306,7 +302,8 @@ async def view_system_role_assignments(
 @router.get("/metrics")
 async def get_system_metrics(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user_info)
+    current_user: dict = Depends(get_current_user),
+    _: str = Depends(require_super_admin)
 ):
     """
     Get system-wide metrics and statistics.

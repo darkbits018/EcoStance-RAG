@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { rbacAPI } from '../../services/api';
+import { tenantUsersAPI, tenantRolesAPI } from '../../services/api';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Users, UserPlus, Edit, Trash2, Search, AlertCircle, Check, Shield } from 'lucide-react';
@@ -15,9 +15,11 @@ interface Role {
 interface User {
     id: string;
     email: string;
-    full_name?: string; // API uses full_name, local interface might use name
-    name?: string;      // Handle both maps
-    roles: Role[];
+    full_name: string;
+    role?: { // API returns single role object or null
+        id: string;
+        name: string;
+    };
     is_active: boolean;
     created_at: string;
 }
@@ -34,11 +36,10 @@ export default function UserManagement() {
     const [showModal, setShowModal] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [formData, setFormData] = useState({
-        email: '',
-        full_name: '',
-        password: '',
+        emails: '',
         role_id: '',
-        is_active: true
+        is_active: true,
+        full_name: '' // Only for edit mode
     });
 
     useEffect(() => {
@@ -48,18 +49,18 @@ export default function UserManagement() {
 
     const loadUsers = async () => {
         try {
-            const data = await rbacAPI.users.list();
+            const data = await tenantUsersAPI.list();
             console.log('🔍 Raw users data:', data);
 
             let usersArray: User[] = [];
             if (Array.isArray(data)) {
                 usersArray = data;
-            } else if (data && typeof data === 'object' && 'users' in data && Array.isArray(data.users)) {
-                usersArray = data.users;
-            } else if (data && typeof data === 'object' && 'data' in data && Array.isArray(data.data)) {
-                usersArray = data.data;
-            } else {
-                usersArray = [];
+            } else if (data && typeof data === 'object') {
+                if ('users' in data && Array.isArray((data as any).users)) {
+                    usersArray = (data as any).users;
+                } else if ('data' in data && Array.isArray((data as any).data)) {
+                    usersArray = (data as any).data;
+                }
             }
 
             setUsers(usersArray);
@@ -72,14 +73,18 @@ export default function UserManagement() {
 
     const loadRoles = async () => {
         try {
-            const data = await rbacAPI.roles.list();
+            const data = await tenantRolesAPI.list();
+            console.log('🔍 Raw roles data:', data);
+
             let rolesArray: Role[] = [];
             if (Array.isArray(data)) {
                 rolesArray = data;
-            } else if (data && typeof data === 'object' && 'roles' in data && Array.isArray(data.roles)) {
-                rolesArray = data.roles;
-            } else if (data && typeof data === 'object' && 'data' in data && Array.isArray(data.data)) {
-                rolesArray = data.data;
+            } else if (data && typeof data === 'object') {
+                if ('roles' in data && Array.isArray((data as any).roles)) {
+                    rolesArray = (data as any).roles;
+                } else if ('data' in data && Array.isArray((data as any).data)) {
+                    rolesArray = (data as any).data;
+                }
             }
             setRoles(rolesArray);
         } catch (err: any) {
@@ -87,24 +92,45 @@ export default function UserManagement() {
         }
     };
 
-    const handleCreateUser = async () => {
-        if (!formData.email.trim() || !formData.full_name.trim()) return;
+    const handleInviteUsers = async () => {
+        if (!formData.emails.trim() || !formData.role_id) return;
+
+        // Parse emails from textarea (split by comma, space, newline)
+        const emailList = formData.emails
+            .split(/[\s,]+/)
+            .map(e => e.trim())
+            .filter(e => e && e.includes('@')); // Basic validation
+
+        if (emailList.length === 0) {
+            setError('Please enter at least one valid email address.');
+            return;
+        }
 
         try {
             setLoading(true);
             setError('');
-            await rbacAPI.users.create({
-                email: formData.email,
-                full_name: formData.full_name,
-                password: formData.password,
-                role_id: formData.role_id || undefined,
-                is_active: formData.is_active
+
+            const result: any = await tenantUsersAPI.inviteBulk({
+                emails: emailList,
+                role_id: formData.role_id
             });
+
             await loadUsers();
-            setSuccess('User invited successfully');
+
+            // Construct success message
+            const successCount = result.successful ? result.successful.length : 0;
+            const failedCount = result.failed ? result.failed.length : 0;
+
+            let msg = `Invited ${successCount} user(s) successfully.`;
+            if (failedCount > 0) {
+                msg += ` Failed to invite ${failedCount} user(s). Check console for details.`;
+                console.warn('Failed invitations:', result.failed);
+            }
+
+            setSuccess(msg);
             resetForm();
         } catch (err: any) {
-            setError(err.message || 'Failed to invite user');
+            setError(err.message || 'Failed to invite users');
         } finally {
             setLoading(false);
         }
@@ -116,10 +142,10 @@ export default function UserManagement() {
         try {
             setLoading(true);
             setError('');
-            await rbacAPI.users.update(editingUser.id, {
+            await tenantUsersAPI.update(editingUser.id, {
                 full_name: formData.full_name,
                 is_active: formData.is_active,
-                role_id: formData.role_id || undefined
+                role_id: formData.role_id
             });
             await loadUsers();
             setSuccess('User updated successfully');
@@ -137,11 +163,18 @@ export default function UserManagement() {
         try {
             setLoading(true);
             setError('');
-            await rbacAPI.users.delete(userId);
+            await tenantUsersAPI.remove(userId);
             await loadUsers();
             setSuccess('User removed successfully');
         } catch (err: any) {
-            setError(err.message || 'Failed to remove user');
+            // If user is already gone (404), treat as success and refresh
+            const errorMsg = (err.message || '').toLowerCase();
+            if (errorMsg.includes('user not found') || errorMsg.includes('not found')) {
+                await loadUsers();
+                setSuccess('User entry cleared (already deleted)');
+            } else {
+                setError(err.message || 'Failed to remove user');
+            }
         } finally {
             setLoading(false);
         }
@@ -151,12 +184,15 @@ export default function UserManagement() {
         setShowModal(false);
         setEditingUser(null);
         setFormData({
-            email: '',
-            full_name: '',
-            password: '',
+            emails: '',
             role_id: '',
-            is_active: true
+            is_active: true,
+            full_name: ''
         });
+        setTimeout(() => {
+            setSuccess('');
+            setError('');
+        }, 5000);
     };
 
     const openEditModal = (user: User) => {
@@ -165,10 +201,9 @@ export default function UserManagement() {
         const currentRoleId = user.roles && user.roles.length > 0 ? user.roles[0].id : '';
 
         setFormData({
-            email: user.email,
-            full_name: user.full_name || user.name || '',
-            password: '', // Password not editable here
-            role_id: currentRoleId,
+            emails: user.email, // Use this field for display in edit (read-only)
+            full_name: user.full_name || '',
+            role_id: user.role?.id || '',
             is_active: user.is_active
         });
         setShowModal(true);
@@ -176,7 +211,7 @@ export default function UserManagement() {
 
     const filteredUsers = Array.isArray(users) ? users.filter(user =>
         user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (user.full_name || user.name || '').toLowerCase().includes(searchTerm.toLowerCase())
+        (user.full_name || '').toLowerCase().includes(searchTerm.toLowerCase())
     ) : [];
 
     const formatDate = (dateString: string) => {
@@ -216,7 +251,7 @@ export default function UserManagement() {
                     </div>
                     <Button onClick={() => setShowModal(true)}>
                         <UserPlus className="w-4 h-4 mr-2" />
-                        Invite User
+                        Invite Users
                     </Button>
                 </div>
 
@@ -242,8 +277,8 @@ export default function UserManagement() {
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
                                         <h3 className="font-medium text-text">{user.email}</h3>
-                                        {(user.full_name || user.name) && (
-                                            <span className="text-sm text-text-secondary">({user.full_name || user.name})</span>
+                                        {user.full_name && (
+                                            <span className="text-sm text-text-secondary">({user.full_name})</span>
                                         )}
                                         {!user.is_active && (
                                             <span className="px-2 py-0.5 text-xs bg-warning/10 text-warning border border-warning/20 rounded">
@@ -255,9 +290,7 @@ export default function UserManagement() {
                                     <div className="flex items-center gap-4 text-xs text-text-secondary mt-2">
                                         <span className="flex items-center gap-1">
                                             <Shield className="w-3 h-3" />
-                                            {user.roles && user.roles.length > 0
-                                                ? user.roles.map(r => r.name).join(', ')
-                                                : 'No active roles'}
+                                            {user.role ? user.role.name : 'No Active Role'}
                                         </span>
                                         <span>Added {formatDate(user.created_at)}</span>
                                     </div>
@@ -299,55 +332,54 @@ export default function UserManagement() {
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-surface border border-border rounded-lg p-6 w-full max-w-md mx-4">
                         <h3 className="text-lg font-semibold text-text mb-4">
-                            {editingUser ? 'Edit User' : 'Invite New User'}
+                            {editingUser ? 'Edit User' : 'Invite New Users'}
                         </h3>
 
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-text-secondary mb-1">
-                                    Email Address *
+                                    {editingUser ? 'Email Address' : 'Email Addresses (Bulk)'} *
                                 </label>
-                                <input
-                                    type="email"
-                                    value={formData.email}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                                    disabled={!!editingUser} // Cannot change email on edit usually
-                                    className={`w-full px-3 py-2 border border-border rounded-lg bg-background text-text focus:border-primary focus:outline-none ${editingUser ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                    placeholder="colleague@example.com"
-                                />
+                                {editingUser ? (
+                                    <input
+                                        type="email"
+                                        value={formData.emails}
+                                        disabled
+                                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text opacity-50 cursor-not-allowed"
+                                    />
+                                ) : (
+                                    <>
+                                        <textarea
+                                            value={formData.emails}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, emails: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text focus:border-primary focus:outline-none min-h-[100px]"
+                                            placeholder="colleague1@example.com, colleague2@example.com&#10;colleague3@example.com"
+                                        />
+                                        <p className="text-xs text-text-secondary mt-1">
+                                            Enter multiple emails separated by commas, spaces, or new lines.
+                                        </p>
+                                    </>
+                                )}
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-text-secondary mb-1">
-                                    Full Name *
-                                </label>
-                                <input
-                                    type="text"
-                                    value={formData.full_name}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, full_name: e.target.value }))}
-                                    className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text focus:border-primary focus:outline-none"
-                                    placeholder="e.g. John Doe"
-                                />
-                            </div>
-
-                            {!editingUser && (
+                            {editingUser && (
                                 <div>
                                     <label className="block text-sm font-medium text-text-secondary mb-1">
-                                        Password *
+                                        Full Name
                                     </label>
                                     <input
-                                        type="password"
-                                        value={formData.password}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                                        type="text"
+                                        value={formData.full_name}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, full_name: e.target.value }))}
                                         className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text focus:border-primary focus:outline-none"
-                                        placeholder="Enter temporary password"
+                                        placeholder="e.g. John Doe"
                                     />
                                 </div>
                             )}
 
                             <div>
                                 <label className="block text-sm font-medium text-text-secondary mb-1">
-                                    Role
+                                    Role *
                                 </label>
                                 <select
                                     value={formData.role_id}
@@ -362,7 +394,7 @@ export default function UserManagement() {
                                     ))}
                                 </select>
                                 <p className="text-xs text-text-secondary mt-1">
-                                    Assigning a role grants specific permissions to this user.
+                                    Assigning a role grants specific permissions to {editingUser ? 'this user' : 'these users'}.
                                 </p>
                             </div>
 
@@ -388,10 +420,10 @@ export default function UserManagement() {
                                 Cancel
                             </Button>
                             <Button
-                                onClick={editingUser ? handleUpdateUser : handleCreateUser}
-                                disabled={loading || !formData.email || !formData.full_name || (!editingUser && !formData.password)}
+                                onClick={editingUser ? handleUpdateUser : handleInviteUsers}
+                                disabled={loading || !formData.emails || !formData.role_id}
                             >
-                                {editingUser ? 'Save Changes' : 'Send Invite'}
+                                {editingUser ? 'Save Changes' : (loading ? 'Sending Invites...' : 'Send Invites')}
                             </Button>
                         </div>
                     </div>

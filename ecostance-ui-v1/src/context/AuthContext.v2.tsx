@@ -35,7 +35,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [timeUntilExpiry, setTimeUntilExpiry] = useState<number>(0);
-  
+
   const refreshIntervalRef = useRef<number | null>(null);
   const expiryCheckIntervalRef = useRef<number | null>(null);
 
@@ -55,19 +55,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const refreshSession = useCallback(async () => {
     try {
       const response = await authAPI.refresh();
-      const { access_token, expires_in, tenant_id } = response as {
+      const { access_token, expires_in, tenant_id, role } = response as {
         access_token: string;
         expires_in: number;
         tenant_id?: string;
+        role?: string;
       };
-      
+
       setAccessToken(access_token, expires_in);
-      
+
       // Update user if tenant_id is returned
       if (tenant_id && user) {
-        setUser({ ...user, tenantId: tenant_id });
+        setUser({ ...user, tenantId: tenant_id, role: role || user.role });
       }
-      
+
       console.log('Token refreshed successfully');
     } catch (error) {
       console.error('Failed to refresh token:', error);
@@ -91,7 +92,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     expiryCheckIntervalRef.current = setInterval(() => {
       const timeRemaining = getTimeUntilExpiry();
       setTimeUntilExpiry(timeRemaining);
-      
+
       // Auto-logout if token expired (handled by the warning component)
     }, 1000);
   }, [refreshSession, clearIntervals]);
@@ -121,17 +122,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           tenant_id?: string;
           user_id?: string;
           email?: string;
+          role?: string;
         };
-        
+
         if (response.access_token) {
           // Store the new access token
           setAccessToken(response.access_token, response.expires_in);
-          
+
           // Set user data
           const userData: User = {
             id: response.user_id || 'user',
             email: response.email || '',
             tenantId: response.tenant_id || '',
+            role: response.role,
           };
           setUser(userData);
           setupTokenRefresh();
@@ -171,23 +174,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setIsAuthLoading(true);
     try {
       const response = await authAPI.login(email, password);
-      const { access_token, expires_in, tenant_id, user_id } = response as {
+      const { access_token, expires_in, tenant_id, user_id, role } = response as {
         access_token: string;
         expires_in: number;
         tenant_id?: string;
         user_id?: string;
+        role?: string;
       };
 
       // Store access token in memory
       setAccessToken(access_token, expires_in);
 
       // Refresh token is automatically stored in httpOnly cookie by backend
-      
+
       // Set user data
       const userData: User = {
         id: user_id || email,
         email: email,
         tenantId: tenant_id || '',
+        role: role,
       };
       setUser(userData);
 

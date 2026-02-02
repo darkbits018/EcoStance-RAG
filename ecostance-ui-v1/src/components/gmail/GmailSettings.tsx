@@ -14,18 +14,12 @@ interface GmailSettingsProps {
     onRefresh: () => Promise<void>;
 }
 
-export default function GmailSettings({ tenant, onRefresh }: GmailSettingsProps) {
-    // access gmail_config safely
-    const gmailConfig = tenant?.gmail_config || {};
-
-    // Debug logging
-    console.log('[GmailSettings] Tenant Gmail Config:', gmailConfig);
-
-    // Check truthy value (handles true, 1, "true")
-    // We also use local state to override if we verify connection via API successfully
-    const propsConnected = !!gmailConfig.is_connected;
-
-    const [isVerifiedConnected, setIsVerifiedConnected] = useState(false);
+export default function GmailSettings({ tenant }: GmailSettingsProps) {
+    const [status, setStatus] = useState<{ connected: boolean; email: string | null }>({
+        connected: false,
+        email: null
+    });
+    const [isLoadingStatus, setIsLoadingStatus] = useState(true);
     const [isVerifying, setIsVerifying] = useState(false);
 
     // Determine effective connection status
@@ -33,26 +27,29 @@ export default function GmailSettings({ tenant, onRefresh }: GmailSettingsProps)
     const connectedEmail = gmailConfig.connected_email || (isVerifiedConnected ? 'Gmail Account' : null);
 
     useEffect(() => {
-        // If props say not connected, let's verify manually by trying to fetch data
-        if (!propsConnected) {
-            verifyConnection();
+        // Explicitly clear status when switching tenants to avoid "trailing" stale state
+        setStatus({ connected: false, email: null });
+        fetchStatus();
+    }, [tenant?.id]); // Re-fetch when tenant switches
+
+    const fetchStatus = async () => {
+        setIsLoadingStatus(true);
+        try {
+            const data = await gmailAPI.auth.getStatus();
+            console.log('[GmailSettings] Connection status:', data);
+            setStatus(data);
+        } catch (err) {
+            console.error('[GmailSettings] Failed to fetch status:', err);
+            setStatus({ connected: false, email: null });
+        } finally {
+            setIsLoadingStatus(false);
+            setIsVerifying(false);
         }
-    }, [propsConnected]);
+    };
 
     const verifyConnection = async () => {
         setIsVerifying(true);
-        try {
-            // Try to fetch recipients as a way to check if we have a valid token
-            await gmailAPI.recipients.list();
-            console.log('[GmailSettings] Verification successful - We are connected!');
-            setIsVerifiedConnected(true);
-        } catch (err) {
-            console.log('[GmailSettings] Verification failed - Not connected', err);
-            setIsVerifiedConnected(false);
-            if (isVerifiedConnected) setIsVerifiedConnected(false); // Reset if it was true
-        } finally {
-            setIsVerifying(false);
-        }
+        await fetchStatus();
     };
 
     const handleConnect = async () => {
@@ -85,10 +82,15 @@ export default function GmailSettings({ tenant, onRefresh }: GmailSettingsProps)
                             <p className="text-sm text-text-secondary mt-1">Connect your Gmail account to automatically ingest emails into your Knowledge Base.</p>
 
                             <div className="mt-4 flex items-center gap-2">
-                                {connected ? (
+                                {isLoadingStatus ? (
+                                    <div className="flex items-center gap-2 text-text-secondary px-3 py-1 rounded-full text-sm">
+                                        <RefreshCw className="w-4 h-4 animate-spin" />
+                                        Checking status...
+                                    </div>
+                                ) : status.connected ? (
                                     <div className="flex items-center gap-2 text-success font-medium bg-success/10 px-3 py-1 rounded-full text-sm">
                                         <CheckCircle className="w-4 h-4" />
-                                        Connected {connectedEmail && `as ${connectedEmail}`}
+                                        Connected {status.email && `as ${status.email}`}
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-2 text-warning font-medium bg-warning/10 px-3 py-1 rounded-full text-sm">
@@ -96,8 +98,8 @@ export default function GmailSettings({ tenant, onRefresh }: GmailSettingsProps)
                                         {isVerifying ? 'Verifying status...' : 'Not Connected'}
                                     </div>
                                 )}
-                                <Button variant="ghost" size="sm" onClick={() => { verifyConnection(); onRefresh(); }} title="Refresh Status">
-                                    <RefreshCw className={`w-4 h-4 text-text-secondary ${isVerifying ? 'animate-spin' : ''}`} />
+                                <Button variant="ghost" size="sm" onClick={verifyConnection} title="Refresh Status" disabled={isLoadingStatus || isVerifying}>
+                                    <RefreshCw className={`w-4 h-4 text-text-secondary ${(isLoadingStatus || isVerifying) ? 'animate-spin' : ''}`} />
                                 </Button>
                             </div>
                             {/* Debug Info */}
@@ -113,7 +115,7 @@ export default function GmailSettings({ tenant, onRefresh }: GmailSettingsProps)
                         </div>
                     </div>
 
-                    {!connected && (
+                    {!isLoadingStatus && !status.connected && (
                         <Button onClick={handleConnect}>
                             Connect Gmail Account
                         </Button>
@@ -121,7 +123,7 @@ export default function GmailSettings({ tenant, onRefresh }: GmailSettingsProps)
                 </div>
             </Card>
 
-            {connected && (
+            {status.connected && (
                 <div className="space-y-8">
                     <GmailRecipientTable />
                     <div className="border-t border-border pt-8">

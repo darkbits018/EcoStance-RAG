@@ -25,6 +25,7 @@ class PublicAgentConfig(Base):
     rate_limit = Column(Text, nullable=False, default='{"queries_per_minute": 10, "max_messages_per_session": 50}')  # JSON object
     features = Column(Text, nullable=False, default='{"show_sources": true, "allow_feedback": true, "show_suggested_questions": true, "enable_database_tools": true, "enable_knowledge_base": true}')  # JSON object
     allowed_tools = Column(Text, nullable=False, default='["tracking", "payments", "complaints", "delivery_estimates"]')  # JSON array of allowed tool categories
+    agent_type = Column(String(50), nullable=False, default="generic")  # 'quickship', 'ecommerce', 'generic', etc.
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_by = Column(String(255))
@@ -38,6 +39,7 @@ class PublicAgentConfig(Base):
             "branding": json.loads(self.branding) if isinstance(self.branding, str) else self.branding,
             "rate_limit": json.loads(self.rate_limit) if isinstance(self.rate_limit, str) else self.rate_limit,
             "features": json.loads(self.features) if isinstance(self.features, str) else self.features,
+            "agent_type": self.agent_type,
         }
         
         if include_sensitive:

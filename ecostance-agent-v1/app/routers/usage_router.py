@@ -10,7 +10,7 @@ from sqlalchemy import func, text
 
 from ..db.database import get_db
 from ..services.usage_tracking_service import UsageTrackingService
-from ..auth.dependencies import get_tenant_id, require_admin
+from ..auth.dependencies import get_tenant_id, require_admin, require_super_admin
 from ..models.tenant import Tenant
 
 
@@ -40,7 +40,7 @@ class EndpointStatsResponse(BaseModel):
 async def get_usage_summary(
     start_date: str = Query(..., description="Start date in YYYY-MM-DD format"),
     end_date: str = Query(..., description="End date in YYYY-MM-DD format"),
-    admin_tenant_id: str = Depends(require_admin),
+    admin_tenant_id: str = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ):
     """

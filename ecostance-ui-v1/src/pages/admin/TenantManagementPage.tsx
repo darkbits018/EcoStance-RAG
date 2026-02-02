@@ -45,10 +45,10 @@ export default function TenantManagementPage() {
       } else {
         data = await tenantsAPI.listTenants(0, 100);
       }
-
+      
       console.log('Raw tenant data received:', data);
       console.log('First tenant sample (full):', JSON.stringify(data[0], null, 2));
-
+      
       // Handle different response formats and map backend fields to frontend interface
       let rawTenants: any[] = [];
       if (Array.isArray(data)) {
@@ -61,7 +61,7 @@ export default function TenantManagementPage() {
         console.error('Unexpected response format:', data);
         console.error('Cannot extract tenant list from response');
       }
-
+      
       // Map backend fields to frontend Tenant interface
       const tenantList: Tenant[] = rawTenants.map((t: any) => ({
         id: t.id,
@@ -75,7 +75,7 @@ export default function TenantManagementPage() {
         queries_30d: t.queries_30d || 0,
         created_at: t.created_at,
       }));
-
+      
       console.log('Tenant list length:', tenantList.length);
       console.log('First mapped tenant:', tenantList[0]);
 
@@ -158,7 +158,7 @@ export default function TenantManagementPage() {
               <h3 className="text-sm font-medium text-error">Backend Error</h3>
               <p className="text-sm text-error mt-1">{error}</p>
               <p className="text-xs text-text-secondary mt-2">
-                Check your backend server logs at http://localhost:9000 for details.
+                Check your backend server logs at http://localhost:8000 for details.
               </p>
               <Button onClick={fetchTenants} size="sm" className="mt-3 bg-error hover:bg-error/90" variant="outline">
                 Retry
@@ -235,8 +235,8 @@ export default function TenantManagementPage() {
                     <div className="text-text-secondary">
                       <p className="mb-2">No tenants found</p>
                       <p className="text-sm">
-                        {!Array.isArray(tenants)
-                          ? 'API endpoint may not be configured correctly'
+                        {!Array.isArray(tenants) 
+                          ? 'API endpoint may not be configured correctly' 
                           : 'Create your first tenant to get started'}
                       </p>
                     </div>

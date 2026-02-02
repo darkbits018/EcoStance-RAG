@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
 // Token configuration
 const TOKEN_EXPIRY_KEY = 'token_expiry';
@@ -132,7 +132,19 @@ async function handleResponse<T>(response: Response): Promise<T> {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
     throw new Error(error.detail || error.message || 'Request failed');
   }
-  return response.json();
+
+  // Handle 204 No Content explicitly
+  if (response.status === 204) {
+    return {} as T;
+  }
+
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : ({} as T);
+  } catch (e) {
+    console.warn('Failed to parse JSON response:', e);
+    return {} as T;
+  }
 }
 
 // API Service Methods
@@ -165,6 +177,70 @@ export const authAPI = {
       method: 'POST',
     });
     clearTokens();
+    return handleResponse(response);
+  },
+
+  setPassword: async (token: string, password: string) => {
+    const response = await fetchWithAuth('/auth/set-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    });
+    return handleResponse(response);
+  },
+};
+
+export const tenantUsersAPI = {
+  list: async () => {
+    const response = await fetchWithAuth('/tenant/users');
+    return handleResponse(response);
+  },
+
+  invite: async (data: { email: string; full_name?: string; role_id: string }) => {
+    const response = await fetchWithAuth('/tenant/users/invite', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
+
+  inviteBulk: async (data: { emails: string[]; role_id: string }) => {
+    const response = await fetchWithAuth('/tenant/users/invite-bulk', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
+
+  update: async (userId: string, data: { full_name?: string; role_id?: string; is_active?: boolean }) => {
+    const response = await fetchWithAuth(`/tenant/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
+
+  remove: async (userId: string) => {
+    const response = await fetchWithAuth(`/tenant/users/${userId}`, {
+      method: 'DELETE',
+    });
+    if (response.status === 204) {
+      return;
+    }
+    return handleResponse(response);
+  },
+};
+
+export const tenantRolesAPI = {
+  list: async () => {
+    const response = await fetchWithAuth('/tenant/roles');
+    return handleResponse(response);
+  },
+
+  create: async (data: { name: string; permissions: string[] }) => {
+    const response = await fetchWithAuth('/tenant/roles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
     return handleResponse(response);
   },
 };
@@ -747,6 +823,21 @@ export const agentAPI = {
   },
 };
 
+// Custom CRM Integration API
+export const customCrmAPI = {
+  sync: async () => {
+    const response = await fetchWithAuth('/custom-crm/sync', {
+      method: 'POST',
+    });
+    return handleResponse(response);
+  },
+
+  getEmails: async (limit = 100) => {
+    const response = await fetchWithAuth(`/custom-crm/emails?limit=${limit}`);
+    return handleResponse(response);
+  },
+};
+
 // Public Chat API
 export const publicChatAPI = {
   // Public endpoints (no auth required)
@@ -1089,6 +1180,10 @@ export const rbacAPI = {
 // Gmail Integration API
 export const gmailAPI = {
   auth: {
+    getStatus: async () => {
+      const response = await fetchWithAuth('/gmail/status');
+      return handleResponse<{ connected: boolean; email: string | null }>(response);
+    },
     getAuthUrl: async () => {
       const response = await fetchWithAuth('/gmail/auth');
       return handleResponse<{ auth_url: string }>(response);

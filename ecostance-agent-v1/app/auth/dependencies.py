@@ -19,44 +19,35 @@ async def get_tenant_id(
     x_tenant_id: Optional[str] = Header(None)
 ) -> str:
     """
-    Extract tenant_id from JWT token or X-Tenant-ID header.
-    
-    Priority:
-    1. JWT token tenant_id claim
-    2. X-Tenant-ID header (fallback)
-    
-    Args:
-        request: FastAPI request object
-        credentials: Bearer token from Authorization header
-        x_tenant_id: Optional tenant ID from X-Tenant-ID header
-        
-    Returns:
-        Tenant ID string
-        
-    Raises:
-        HTTPException: If tenant_id cannot be extracted
+    Extract and validate tenant_id. 
+    If JWT is present, it is the single source of truth.
     """
-    # Try to get tenant_id from JWT token first
+    jwt_tenant_id = None
     if credentials:
         try:
             payload = verify_token(credentials.credentials)
-            tenant_id = payload.get("tenant_id")
-            if tenant_id:
-                return tenant_id
+            jwt_tenant_id = payload.get("tenant_id")
         except HTTPException:
             # If token is invalid, try fallback
             pass
     
-    # Fallback to X-Tenant-ID header
-    if x_tenant_id:
-        return x_tenant_id
+    # If both present, they must match
+    if jwt_tenant_id and x_tenant_id and jwt_tenant_id != x_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant ID mismatch between JWT and header"
+        )
     
-    # No tenant_id found
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Tenant ID not found. Provide valid JWT token or X-Tenant-ID header",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    tenant_id = jwt_tenant_id or x_tenant_id
+    
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tenant ID not found. Provide valid JWT token or X-Tenant-ID header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return tenant_id
 
 
 async def get_tenant_from_token(
@@ -177,60 +168,58 @@ async def get_current_user(
     db: Session = Depends(get_db)
 ) -> dict:
     """
-    Get current authenticated user information.
-    Returns a dictionary with tenant_id and user_id.
-    
-    This is a compatibility function for endpoints that expect user context.
-    
-    Args:
-        request: FastAPI request object
-        credentials: Bearer token from Authorization header
-        x_tenant_id: Optional tenant ID from X-Tenant-ID header
-        db: Database session
-        
-    Returns:
-        Dictionary with tenant_id and user_id
-        
-    Raises:
-        HTTPException: If authentication fails
+    Get current authenticated user and enforce tenant membership.
     """
-    # Try to get tenant_id from JWT token first
-    tenant_id = None
-    user_id = None
-    
+    payload = None
     if credentials:
         try:
             payload = verify_token(credentials.credentials)
             tenant_id = payload.get("tenant_id")
             user_id = payload.get("user_id", "system")  # Default to "system" if not provided
         except HTTPException:
-            pass
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    # 1. Determine target tenant
+    jwt_tenant_id = payload.get("tenant_id") if payload else None
     
-    # Fallback to X-Tenant-ID header
-    if not tenant_id and x_tenant_id:
-        tenant_id = x_tenant_id
-        user_id = "system"  # Default user for header-based auth
-    
-    if not tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required. Provide valid JWT token or X-Tenant-ID header",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    # Verify tenant exists and is active
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-    
-    if not tenant:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tenant not found"
-        )
-    
-    if not tenant.is_active:
+    if jwt_tenant_id and x_tenant_id and jwt_tenant_id != x_tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant account is inactive or suspended"
+            detail="Security violation: Header tenant_id does not match JWT tenant_id"
+        )
+        
+    target_tenant_id = jwt_tenant_id or x_tenant_id
+    user_id = payload.get("user_id") if payload else "system"
+    
+    if not target_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tenant Identification required"
+        )
+
+    # 2. Verify Tenant exists
+    tenant = db.query(Tenant).filter(Tenant.id == target_tenant_id).first()
+    if not tenant or not tenant.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant is inactive or does not exist"
+        )
+
+    # 3. Verify User-Tenant relationship
+    from ..models.tenant_user import TenantUser
+    tenant_user = db.query(TenantUser).filter(
+        TenantUser.tenant_id == target_tenant_id,
+        TenantUser.user_id == user_id
+    ).first()
+
+    if not tenant_user and user_id != "system":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not a member of this tenant"
         )
 
     # Get the internal TenantUser ID
@@ -248,10 +237,12 @@ async def get_current_user(
             tenant_user_id = tenant_user.id
     
     return {
-        "tenant_id": tenant_id,
-        "user_id": user_id,  # Global Auth ID
-        "tenant_user_id": tenant_user_id,  # Internal Database PK
-        "tenant": tenant
+        "tenant_id": target_tenant_id,
+        "user_id": user_id,
+        "tenant_user_id": tenant_user.id if tenant_user else None,
+        "tenant": tenant,
+        "user": tenant_user,
+        "system_role": tenant_user.system_role if tenant_user else None
     }
 
 
@@ -262,72 +253,42 @@ async def require_admin(
     db: Session = Depends(get_db)
 ) -> str:
     """
-    Require admin authentication.
-    
-    For now, this is a placeholder that validates the tenant exists.
-    In production, you should implement proper admin role checking.
-    
-    Args:
-        request: FastAPI request object
-        credentials: Bearer token from Authorization header
-        db: Database session
-        
-    Returns:
-        Tenant ID string (admin tenant)
-        
-    Raises:
-        HTTPException: If authentication fails or user is not admin
+    Require administrative privileges (Super Admin or Tenant Admin).
+    Returns the tenant_id of the administrator.
     """
-    # Get tenant_id from token
-    if not credentials:
+    user_context = await get_current_user(request, credentials, None, db)
+    system_role = user_context.get("system_role")
+    from .permissions import SystemRole
+    
+    if system_role not in [SystemRole.SUPER_ADMIN, SystemRole.TENANT_ADMIN]:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Admin authentication required",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrative access required"
+        )
+        
+    return user_context["tenant_id"]
+
+
+async def require_super_admin(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db)
+) -> str:
+    """
+    Require Super Admin privileges (System-wide administrator).
+    """
+    user_context = await get_current_user(request, credentials, None, db)
+    system_role = user_context.get("system_role")
+    from .permissions import SystemRole
+    
+    if system_role != SystemRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super Admin access required for this system-level operation"
         )
     
     try:
         payload = verify_token(credentials.credentials)
         tenant_id = payload.get("tenant_id")
         
-        if not tenant_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid admin token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Verify tenant exists and is active
-        tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-        
-        if not tenant:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Tenant not found"
-            )
-        
-        if not tenant.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Tenant account is inactive"
-            )
-        
-        # TODO: Add proper admin role checking here
-        # For now, we'll allow any authenticated tenant to access admin endpoints
-        # In production, check if tenant has admin role:
-        # if tenant.role != "admin":
-        #     raise HTTPException(
-        #         status_code=status.HTTP_403_FORBIDDEN,
-        #         detail="Admin access required"
-        #     )
-        
-        return tenant_id
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid admin token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    return user_context["tenant_id"]

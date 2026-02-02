@@ -44,15 +44,20 @@ router = APIRouter()
 # ============================================================================
 
 def get_tenant_id_from_request(request: Request) -> str:
-    """Extract tenant ID from request (from subdomain, header, or default)."""
+    """Extract tenant ID from request (typically from X-Tenant-ID header)."""
     # Try to get from header first
     tenant_id = request.headers.get("X-Tenant-ID")
-    if tenant_id:
-        return tenant_id
-    
-    # For now, use CertifyDigital tenant as default
-    # In production, this should extract from subdomain
-    return "badcd123-6cc6-4011-b01b-d33d1153f10d"
+    if not tenant_id:
+        # Check if it was set by middleware in request state (e.g. from JWT)
+        tenant_id = getattr(request.state, "tenant_id", None)
+        
+    if not tenant_id:
+        logger.error("Request missing X-Tenant-ID header in public chat")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Tenant-ID header is missing. This is required to identify the tenant."
+        )
+    return tenant_id
 
 
 def get_client_metadata(request: Request) -> dict:

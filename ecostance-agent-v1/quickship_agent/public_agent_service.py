@@ -64,6 +64,9 @@ Remember:
 When you need to use a tool, call it directly and use the result to answer the customer."""
 
 
+# Strict whitelist of allowed tool categories for runtime validation
+SAFE_TOOL_CATEGORIES = {"tracking", "payments", "complaints", "delivery_estimates", "knowledge_base"}
+
 class PublicAgentService:
     """Service for managing public agent conversations with restricted tool access"""
     
@@ -75,7 +78,14 @@ class PublicAgentService:
         )
         
         self.tenant_id = tenant_id
-        self.allowed_tools = allowed_tools if allowed_tools is not None else ["tracking", "payments", "complaints", "delivery_estimates"]
+        
+        # Validate allowed_tools against whitelist
+        requested_tools = allowed_tools if allowed_tools is not None else ["tracking", "payments", "complaints", "delivery_estimates"]
+        self.allowed_tools = [t for t in requested_tools if t in SAFE_TOOL_CATEGORIES]
+        
+        if not self.allowed_tools:
+             logger.warning(f"No safe tools found in requested list: {requested_tools}. Falling back to defaults.")
+             self.allowed_tools = ["tracking", "payments", "complaints", "delivery_estimates"]
         
         # Build tool list based on allowed categories
         self.tools = self._build_tool_list()
@@ -87,24 +97,23 @@ class PublicAgentService:
         self.conversations: Dict[str, List[Dict]] = {}
     
     def _build_tool_list(self) -> List:
-        """Build list of tools based on allowed categories"""
+        """Build list of tools based on allowed categories with strict validation"""
         tools = []
         
-        # Add database tools based on allowed categories
+        # Add database tools based on validated categories
         for category in self.allowed_tools:
-            if category in TOOL_CATEGORIES:
+            if category in TOOL_CATEGORIES and category in SAFE_TOOL_CATEGORIES:
                 tools.extend(TOOL_CATEGORIES[category])
         
-        # Add KB tools if tenant_id is provided (KB tools are always available if tenant exists)
-        if self.tenant_id:
+        # Add KB tools if white-listed and tenant_id is provided
+        if "knowledge_base" in self.allowed_tools and self.tenant_id:
             kb_tools = [
                 create_search_knowledge_base_tool(self.tenant_id),
                 create_list_knowledge_bases_tool(self.tenant_id)
             ]
             tools.extend(kb_tools)
         
-        logger.info(f"Built tool list with {len(tools)} tools for categories: {self.allowed_tools}")
-        logger.info(f"Tool names: {[t.name for t in tools]}")
+        logger.info(f"Built validated tool list with {len(tools)} tools for categories: {self.allowed_tools}")
         return tools
     
     def _get_tool_descriptions(self) -> str:

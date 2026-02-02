@@ -217,6 +217,28 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, general_exception_handler)
 # === END: branch error handling ===
 
+# Configure CORS - MUST be added before other middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # React default
+        "http://localhost:3001",
+        "http://localhost:5173",  # Vite default
+        "http://localhost:8501",  # Streamlit default
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8501",
+        # For development, you can also use:
+        # "*"  # Allow all origins (NOT recommended for production)
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,  # Cache preflight requests for 1 hour
+)
+
 # === BEGIN: branch error handling ===
 # Add middleware (order matters: request ID -> langsmith -> validation -> rate limiter -> auth -> usage tracking)
 app.add_middleware(UsageTrackingMiddleware)  # Last (logs after response)
@@ -251,6 +273,7 @@ app.include_router(system_router.router, prefix="/api/v1", tags=["17. System Mon
 app.include_router(tenant_users.router, tags=["18. Tenant User Management"])
 app.include_router(gmail_router.router, tags=["19. Gmail Integration"])
 app.include_router(dynamics_router.router, tags=["20. Dynamics Integration"])
+app.include_router(custom_crm_router.router, tags=["21. Custom CRM Integration"])
 
 
 @app.get("/")

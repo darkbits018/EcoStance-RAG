@@ -67,14 +67,20 @@ router = APIRouter()
 # ============================================================================
 
 def get_tenant_id_from_request(request: Request) -> str:
-    """Extract tenant ID from request (from subdomain, header, or default)."""
+    """Extract tenant ID from request (typically from X-Tenant-ID header)."""
     # Try to get from header first
     tenant_id = request.headers.get("X-Tenant-ID")
-    if tenant_id:
-        return tenant_id
-    
-    # For now, use CertifyDigital tenant as default
-    return "badcd123-6cc6-4011-b01b-d33d1153f10d"
+    if not tenant_id:
+        # Check if it was set by middleware in request state (e.g. from JWT)
+        tenant_id = getattr(request.state, "tenant_id", None)
+        
+    if not tenant_id:
+        logger.error("Request missing X-Tenant-ID header")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Tenant-ID header is missing. This is required to identify the tenant."
+        )
+    return tenant_id
 
 
 def get_client_metadata(request: Request) -> dict:
@@ -132,16 +138,24 @@ async def chat_with_public_agent(
                 headers={"Retry-After": "60"}
             )
         
-        # Get or create session
+        # Get or create session - securely verified by tenant_id
         metadata = get_client_metadata(request)
-        session = service.get_or_create_session(
-            request_data.session_id,
-            tenant_id,
-            metadata
-        )
+        try:
+            session = service.get_or_create_session(
+                request_data.session_id,
+                tenant_id,
+                metadata
+            )
+        except ValueError as e:
+            if "Unauthorized session access" in str(e):
+                 raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Unauthorized: Session ID belongs to a different tenant."
+                )
+            raise e
         
         # Check if session is expired
-        if service.is_session_expired(request_data.session_id):
+        if service.is_session_expired(request_data.session_id, tenant_id):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Session has expired"
@@ -169,7 +183,19 @@ async def chat_with_public_agent(
             )
         
         # Use the agent service to process the message
-        from quickship_agent.public_agent_service import PublicAgentService as AgentServiceClass
+        from quickship_agent.public_agent_service import PublicAgentService as QuickShipAgent
+        from ecommerce_agent.service import EcommerceAgentService
+        from generic_agent.service import GenericAgentService
+        
+        # Mapping of agent types to service classes
+        AGENT_MAPPING = {
+            "quickship": QuickShipAgent,
+            "ecommerce": EcommerceAgentService,
+            "generic": GenericAgentService,
+        }
+        
+        AgentServiceClass = AGENT_MAPPING.get(config.agent_type, GenericAgentService)
+        logger.info(f"Using agent type: {config.agent_type} for tenant {tenant_id}")
         
         agent = AgentServiceClass(tenant_id=tenant_id, allowed_tools=allowed_tools)
         
@@ -184,6 +210,15 @@ async def chat_with_public_agent(
         logger.info(f"KB: {kb_name}, DB: {db_connection}")
         logger.info(f"Allowed tools: {allowed_tools}")
         
+        # Validate that the requested KB/DB are in the allowed list for this tenant
+        if kb_name and kb_name not in allowed_kbs:
+            logger.warning(f"Tenant {tenant_id} attempted to use unauthorized KB: {kb_name}")
+            kb_name = allowed_kbs[0] if allowed_kbs else None
+
+        if db_connection and db_connection not in allowed_dbs:
+            logger.warning(f"Tenant {tenant_id} attempted to use unauthorized DB: {db_connection}")
+            db_connection = allowed_dbs[0] if allowed_dbs else None
+
         # Call the agent
         agent_response = agent.chat(
             session_id=request_data.session_id,
@@ -206,7 +241,7 @@ async def chat_with_public_agent(
         )
         
         # Update session activity
-        service.update_session_activity(request_data.session_id, is_query=True)
+        service.update_session_activity(request_data.session_id, tenant_id, is_query=True)
         
         return PublicAgentChatResponse(
             response=response_text,
@@ -312,7 +347,7 @@ async def submit_feedback(
         service = PublicAgentService(db)
         
         # Verify session exists
-        session = service.get_session(feedback_data.session_id)
+        session = service.get_session(feedback_data.session_id, tenant_id)
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
