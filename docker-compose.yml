@@ -84,6 +84,7 @@ services:
       - GOOGLE_REDIRECT_URI=${CRM_GOOGLE_REDIRECT_URI}
       - CRM_SECRET_KEY=${CRM_SECRET_KEY}
       - ALGORITHM=${ALGORITHM:-HS256}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:9002,http://localhost:9003,http://localhost:5173}
     depends_on:
       db:
         condition: service_healthy
