@@ -287,8 +287,4 @@ async def require_super_admin(
             detail="Super Admin access required for this system-level operation"
         )
     
-    try:
-        payload = verify_token(credentials.credentials)
-        tenant_id = payload.get("tenant_id")
-        
     return user_context["tenant_id"]
