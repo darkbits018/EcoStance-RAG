@@ -61,7 +61,6 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:9002}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:9002,http://localhost:9003,http://localhost:5173}
     volumes:
       - ./ecostance-agent-v1/uploads:/app/uploads
       - ./ecostance-agent-v1/data:/app/data
@@ -84,7 +83,6 @@ services:
       - GOOGLE_REDIRECT_URI=${CRM_GOOGLE_REDIRECT_URI}
       - CRM_SECRET_KEY=${CRM_SECRET_KEY}
       - ALGORITHM=${ALGORITHM:-HS256}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:9002,http://localhost:9003,http://localhost:5173}
     depends_on:
       db:
         condition: service_healthy

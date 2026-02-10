@@ -13,15 +13,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.PROJECT_NAME, version="1.0.0", lifespan=lifespan)
 
-# Add CORS middleware
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:9002,http://localhost:9003,http://localhost:5173").split(",")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# # Add CORS middleware - set to '*' to let the infrastructure handle security/CORS
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

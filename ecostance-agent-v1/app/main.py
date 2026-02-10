@@ -198,15 +198,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Add CORS middleware because frontends (9002/9003) call backends (9000/9001) directly
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:9002,http://localhost:9003,http://localhost:5173").split(",")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# # Add CORS middleware - set to '*' to let the infrastructure handle security/CORS
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # === BEGIN: branch error handling ===
 # Add global exception handlers
@@ -217,27 +216,7 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, general_exception_handler)
 # === END: branch error handling ===
 
-# Configure CORS - MUST be added before other middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # React default
-        "http://localhost:3001",
-        "http://localhost:5173",  # Vite default
-        "http://localhost:8501",  # Streamlit default
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:8501",
-        # For development, you can also use:
-        # "*"  # Allow all origins (NOT recommended for production)
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=3600,  # Cache preflight requests for 1 hour
-)
+
 
 # === BEGIN: branch error handling ===
 # Add middleware (order matters: request ID -> langsmith -> validation -> rate limiter -> auth -> usage tracking)
