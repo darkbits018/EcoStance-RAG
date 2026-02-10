@@ -286,5 +286,5 @@ async def require_super_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Super Admin access required for this system-level operation"
         )
-    
+        
     return user_context["tenant_id"]

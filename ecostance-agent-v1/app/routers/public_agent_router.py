@@ -10,7 +10,7 @@ import json
 
 from ..db.database import get_db
 from ..services.public_agent_service import PublicAgentService
-from ..auth.dependencies import get_current_user, require_admin
+from ..auth.dependencies import get_current_user, require_admin, require_super_admin
 from ..models.tenant_user import TenantUser
 from ..schemas.public_agent import (
     PublicAgentChatRequest,
@@ -183,19 +183,23 @@ async def chat_with_public_agent(
             )
         
         # Use the agent service to process the message
-        from quickship_agent.public_agent_service import PublicAgentService as QuickShipAgent
-        from ecommerce_agent.service import EcommerceAgentService
-        from generic_agent.service import GenericAgentService
+        from agents.quickship_agent.public_agent_service import PublicAgentService as QuickShipAgent
+        from agents.ecommerce_agent.service import EcommerceAgentService
+        from agents.generic_agent.service import GenericAgentService
+        from agents.ecostance_agent.service import EcoStanceAgentService
         
         # Mapping of agent types to service classes
         AGENT_MAPPING = {
             "quickship": QuickShipAgent,
             "ecommerce": EcommerceAgentService,
             "generic": GenericAgentService,
+            "ecostance": EcoStanceAgentService,
         }
         
-        AgentServiceClass = AGENT_MAPPING.get(config.agent_type, GenericAgentService)
-        logger.info(f"Using agent type: {config.agent_type} for tenant {tenant_id}")
+        # Determine agent type: Request override > Config
+        target_agent_type = request_data.agent_type or config.agent_type
+        AgentServiceClass = AGENT_MAPPING.get(target_agent_type, GenericAgentService)
+        logger.info(f"Using agent type: {target_agent_type} (Requested: {request_data.agent_type}, Config: {config.agent_type}) for tenant {tenant_id}")
         
         agent = AgentServiceClass(tenant_id=tenant_id, allowed_tools=allowed_tools)
         
@@ -219,16 +223,18 @@ async def chat_with_public_agent(
             logger.warning(f"Tenant {tenant_id} attempted to use unauthorized DB: {db_connection}")
             db_connection = allowed_dbs[0] if allowed_dbs else None
 
-        # Call the agent
+        # Call the agent with multilingual support
         agent_response = agent.chat(
             session_id=request_data.session_id,
             message=request_data.message,
             knowledge_base=kb_name,
-            database_connection=db_connection
+            database_connection=db_connection,
+            user_language=request_data.user_language
         )
         
         response_text = agent_response.get("response", "I'm sorry, I couldn't process your request.")
-        tool_used = agent_response.get("tool_used")  # Can be added to agent response
+        detected_language = agent_response.get("language", "en")
+        tool_used = agent_response.get("tool_used")
         
         # Add assistant message
         assistant_message = service.add_message(
@@ -236,7 +242,7 @@ async def chat_with_public_agent(
             tenant_id=tenant_id,
             role="assistant",
             content=response_text,
-            sources=None,  # Can add source retrieval later
+            sources=None,
             tool_used=tool_used
         )
         
@@ -421,6 +427,7 @@ async def get_admin_config(
             branding=BrandingConfig(**config_dict["branding"]),
             rate_limit=RateLimitConfig(**config_dict["rate_limit"]),
             features=FeaturesConfig(**config_dict["features"]),
+            agent_type=config_dict.get("agent_type", "quickship"),
             created_at=config_dict.get("created_at"),
             updated_at=config_dict.get("updated_at"),
             updated_by=config_dict.get("updated_by")
@@ -473,6 +480,7 @@ async def update_admin_config(
                 branding=BrandingConfig(**config_dict["branding"]),
                 rate_limit=RateLimitConfig(**config_dict["rate_limit"]),
                 features=FeaturesConfig(**config_dict["features"]),
+                agent_type=config_dict.get("agent_type", "quickship"),
                 created_at=config_dict.get("created_at"),
                 updated_at=config_dict.get("updated_at"),
                 updated_by=config_dict.get("updated_by")
@@ -489,6 +497,77 @@ async def update_admin_config(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while updating configuration"
+        )
+
+
+@router.put(
+    "/api/v1/superadmin/public-agent/config/{tenant_id}",
+    response_model=AdminPublicAgentConfigUpdateResponse,
+    dependencies=[Depends(require_super_admin)],
+    tags=["Public Agent SuperAdmin"]
+)
+async def superadmin_update_config(
+    tenant_id: str,
+    update_data: AdminPublicAgentConfigUpdate,
+    current_user: TenantUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update the public agent configuration for A SPECIFIC tenant.
+    
+    Requires SUPER_ADMIN role.
+    """
+    try:
+        service = PublicAgentService(db)
+        
+        # Verify tenant exists
+        from ..models.tenant import Tenant
+        tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        if not tenant:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tenant {tenant_id} not found"
+            )
+        
+        # Update configuration
+        config = service.update_config(
+            tenant_id=tenant_id,
+            update_data=update_data,
+            updated_by=current_user.get("email", "superadmin")
+        )
+        
+        config_dict = config.to_dict(include_sensitive=True)
+        
+        return AdminPublicAgentConfigUpdateResponse(
+            config=AdminPublicAgentConfigResponse(
+                enabled=config_dict["enabled"],
+                allowed_kbs=config_dict["allowed_kbs"],
+                allowed_dbs=config_dict["allowed_dbs"],
+                allowed_tools=config_dict.get("allowed_tools", ["tracking", "payments", "complaints", "delivery_estimates"]),
+                welcome_message=config_dict["welcome_message"],
+                suggested_questions=config_dict["suggested_questions"],
+                branding=BrandingConfig(**config_dict["branding"]),
+                rate_limit=RateLimitConfig(**config_dict["rate_limit"]),
+                features=FeaturesConfig(**config_dict["features"]),
+                agent_type=config_dict.get("agent_type", "quickship"),
+                created_at=config_dict.get("created_at"),
+                updated_at=config_dict.get("updated_at"),
+                updated_by=config_dict.get("updated_by")
+            )
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in superadmin update config: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while updating tenant configuration"
         )
 
 

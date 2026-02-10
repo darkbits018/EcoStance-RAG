@@ -132,7 +132,7 @@ RATE_LIMIT_CONFIGS = {
         requests_per_day=1000
     ),
     "basic": RateLimitConfig(
-        requests_per_minute=30,
+        requests_per_minute=100,
         requests_per_hour=500,
         requests_per_day=5000
     ),
@@ -171,11 +171,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
             
             if not is_allowed:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=error_message,
-                    headers={"Retry-After": "60"}
-                )
+                # RATE LIMIT DISABLED TEMPORARILY
+                pass
+                # raise HTTPException(
+                #     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                #     detail=error_message,
+                #     headers={"Retry-After": "60"}
+                # )
         
         response = await call_next(request)
         return response

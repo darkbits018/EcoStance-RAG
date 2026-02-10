@@ -14,7 +14,7 @@ from .middleware.usage_tracking_middleware import UsageTrackingMiddleware
 # LangSmith middleware removed - limiting tracing to embedding, RAG, and agent only
 
 # Import QuickShip AI Agent
-from quickship_agent.router import router as agent_router
+from agents.quickship_agent.router import router as agent_router
 
 # === BEGIN: branch error handling ===
 # Import new error handling infrastructure

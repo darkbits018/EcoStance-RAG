@@ -77,7 +77,7 @@ async def query_collection(
         
         # Try multilingual collection first, fallback to legacy collection name
         try:
-            from quickship_agent.services.multilingual_rag_service import get_multilingual_rag_service
+            from agents.quickship_agent.services.multilingual_rag_service import get_multilingual_rag_service
             rag_service = get_multilingual_rag_service()
             
             if rag_service.check_collection_exists(multilingual_collection):

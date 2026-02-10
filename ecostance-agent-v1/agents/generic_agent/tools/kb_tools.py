@@ -16,8 +16,8 @@ def create_search_knowledge_base_tool(tenant_id: str):
         try:
             # Reusing existing RAG logic from quickship_agent if compatible, 
             # or pointing to a shared service.
-            from quickship_agent.services.rag_service import execute_query
-            from quickship_agent.services.qdrant_service import get_qdrant_client
+            from agents.quickship_agent.services.rag_service import execute_query
+            from agents.quickship_agent.services.qdrant_service import get_qdrant_client
             from app.services.tenant_service import get_tenant_service
             
             qdrant_client = get_qdrant_client()
@@ -38,7 +38,7 @@ def create_list_knowledge_bases_tool(tenant_id: str):
     def list_available_knowledge_bases() -> str:
         """List all available knowledge bases."""
         try:
-            from quickship_agent.services.qdrant_service import get_qdrant_client
+            from agents.quickship_agent.services.qdrant_service import get_qdrant_client
             from app.services.tenant_service import get_tenant_service
             
             client = get_qdrant_client()

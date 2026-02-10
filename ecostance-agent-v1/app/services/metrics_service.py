@@ -143,7 +143,7 @@ class MetricsService:
         
         # Aggregate from hourly metrics
         hourly_stats = self.db.execute(
-            text("""
+            """
             SELECT 
                 SUM(api_call_count) as total_calls,
                 SUM(api_success_count) as success_count,
@@ -154,10 +154,10 @@ class MetricsService:
                 SUM(query_error_count) as query_errors,
                 AVG(avg_query_time_ms) as avg_query_time
             FROM tenant_metrics
-            WHERE tenant_id = :tenant_id AND metric_type = 'hourly' 
-                AND period_start >= :start AND period_start < :end
-            """),
-            {"tenant_id": tenant_id, "start": period_start, "end": period_end}
+            WHERE tenant_id = ? AND metric_type = 'hourly' 
+                AND period_start >= ? AND period_start < ?
+            """,
+            (tenant_id, period_start, period_end)
         ).fetchone()
         
         if not hourly_stats or hourly_stats[0] is None:
@@ -166,12 +166,12 @@ class MetricsService:
         
         # Get storage metrics from quota usage
         storage_stats = self.db.execute(
-            text("""
+            """
             SELECT storage_bytes, document_count
             FROM tenant_quota_usage
-            WHERE tenant_id = :tenant_id AND period_type = 'daily' AND period_start = :period_start
-            """),
-            {"tenant_id": tenant_id, "period_start": period_start}
+            WHERE tenant_id = ? AND period_type = 'daily' AND period_start = ?
+            """,
+            (tenant_id, period_start)
         ).fetchone()
         
         storage_bytes = storage_stats[0] if storage_stats else 0
@@ -179,41 +179,39 @@ class MetricsService:
         
         # Insert or update daily metrics
         self.db.execute(
-            text("""
+            """
             INSERT INTO tenant_metrics 
                 (tenant_id, metric_type, period_start, period_end,
                  storage_bytes, document_count,
                  query_count, query_success_count, query_error_count, avg_query_time_ms,
                  api_call_count, api_success_count, api_error_count, avg_response_time_ms,
                  updated_at)
-            VALUES (:tenant_id, 'daily', :period_start, :period_end, :storage_bytes, :document_count, 
-                    :query_count, :query_success, :query_errors, :avg_query_time,
-                    :api_calls, :api_success, :api_errors, :avg_response_time, :updated_at)
+            VALUES (?, 'daily', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(tenant_id, metric_type, period_start)
             DO UPDATE SET
-                storage_bytes = :storage_bytes2,
-                document_count = :document_count2,
-                query_count = :query_count2,
-                query_success_count = :query_success2,
-                query_error_count = :query_errors2,
-                avg_query_time_ms = :avg_query_time2,
-                api_call_count = :api_calls2,
-                api_success_count = :api_success2,
-                api_error_count = :api_errors2,
-                avg_response_time_ms = :avg_response_time2,
-                updated_at = :updated_at2
-            """),
-            {
-                "tenant_id": tenant_id, "period_start": period_start, "period_end": period_end,
-                "storage_bytes": storage_bytes, "document_count": document_count,
-                "query_count": hourly_stats[4] or 0, "query_success": hourly_stats[5] or 0, "query_errors": hourly_stats[6] or 0, "avg_query_time": hourly_stats[7] or 0,
-                "api_calls": hourly_stats[0] or 0, "api_success": hourly_stats[1] or 0, "api_errors": hourly_stats[2] or 0, "avg_response_time": hourly_stats[3] or 0,
-                "updated_at": datetime.utcnow(),
-                "storage_bytes2": storage_bytes, "document_count2": document_count,
-                "query_count2": hourly_stats[4] or 0, "query_success2": hourly_stats[5] or 0, "query_errors2": hourly_stats[6] or 0, "avg_query_time2": hourly_stats[7] or 0,
-                "api_calls2": hourly_stats[0] or 0, "api_success2": hourly_stats[1] or 0, "api_errors2": hourly_stats[2] or 0, "avg_response_time2": hourly_stats[3] or 0,
-                "updated_at2": datetime.utcnow()
-            }
+                storage_bytes = ?,
+                document_count = ?,
+                query_count = ?,
+                query_success_count = ?,
+                query_error_count = ?,
+                avg_query_time_ms = ?,
+                api_call_count = ?,
+                api_success_count = ?,
+                api_error_count = ?,
+                avg_response_time_ms = ?,
+                updated_at = ?
+            """,
+            (
+                tenant_id, period_start, period_end,
+                storage_bytes, document_count,
+                hourly_stats[4] or 0, hourly_stats[5] or 0, hourly_stats[6] or 0, hourly_stats[7] or 0,
+                hourly_stats[0] or 0, hourly_stats[1] or 0, hourly_stats[2] or 0, hourly_stats[3] or 0,
+                datetime.utcnow(),
+                storage_bytes, document_count,
+                hourly_stats[4] or 0, hourly_stats[5] or 0, hourly_stats[6] or 0, hourly_stats[7] or 0,
+                hourly_stats[0] or 0, hourly_stats[1] or 0, hourly_stats[2] or 0, hourly_stats[3] or 0,
+                datetime.utcnow()
+            )
         )
         self.db.commit()
         
@@ -246,7 +244,7 @@ class MetricsService:
             start_date = end_date - timedelta(days=30)
         
         results = self.db.execute(
-            text("""
+            """
             SELECT 
                 period_start, period_end,
                 storage_bytes, document_count, collection_count,
@@ -256,12 +254,12 @@ class MetricsService:
                 db_connection_count, avg_connection_time_ms,
                 estimated_cost
             FROM tenant_metrics
-            WHERE tenant_id = :tenant_id AND metric_type = :metric_type
-                AND period_start >= :start AND period_start <= :end
+            WHERE tenant_id = ? AND metric_type = ?
+                AND period_start >= ? AND period_start <= ?
             ORDER BY period_start DESC
-            LIMIT :limit
-            """),
-            {"tenant_id": tenant_id, "metric_type": metric_type, "start": start_date, "end": end_date, "limit": limit}
+            LIMIT ?
+            """,
+            (tenant_id, metric_type, start_date, end_date, limit)
         ).fetchall()
         
         metrics = []
@@ -322,14 +320,14 @@ class MetricsService:
         start_date = end_date - timedelta(days=days)
         
         results = self.db.execute(
-            text("""
+            """
             SELECT period_start, storage_bytes, document_count
             FROM tenant_metrics
-            WHERE tenant_id = :tenant_id AND metric_type = 'daily'
-                AND period_start >= :start AND period_start <= :end
+            WHERE tenant_id = ? AND metric_type = 'daily'
+                AND period_start >= ? AND period_start <= ?
             ORDER BY period_start ASC
-            """),
-            {"tenant_id": tenant_id, "start": start_date, "end": end_date}
+            """,
+            (tenant_id, start_date, end_date)
         ).fetchall()
         
         return [
@@ -361,7 +359,7 @@ class MetricsService:
         start_date = end_date - timedelta(days=days)
         
         result = self.db.execute(
-            text("""
+            """
             SELECT 
                 SUM(query_count) as total_queries,
                 SUM(query_success_count) as successful_queries,
@@ -369,10 +367,10 @@ class MetricsService:
                 AVG(avg_query_time_ms) as avg_time,
                 MAX(p99_query_time_ms) as max_p99_time
             FROM tenant_metrics
-            WHERE tenant_id = :tenant_id AND metric_type = 'daily'
-                AND period_start >= :start AND period_start <= :end
-            """),
-            {"tenant_id": tenant_id, "start": start_date, "end": end_date}
+            WHERE tenant_id = ? AND metric_type = 'daily'
+                AND period_start >= ? AND period_start <= ?
+            """,
+            (tenant_id, start_date, end_date)
         ).fetchone()
         
         if not result or result[0] is None:
@@ -416,7 +414,7 @@ class MetricsService:
         start_date = end_date - timedelta(days=days)
         
         results = self.db.execute(
-            text("""
+            """
             SELECT 
                 period_start,
                 api_call_count,
@@ -424,11 +422,11 @@ class MetricsService:
                 query_count,
                 query_error_count
             FROM tenant_metrics
-            WHERE tenant_id = :tenant_id AND metric_type = 'daily'
-                AND period_start >= :start AND period_start <= :end
+            WHERE tenant_id = ? AND metric_type = 'daily'
+                AND period_start >= ? AND period_start <= ?
             ORDER BY period_start ASC
-            """),
-            {"tenant_id": tenant_id, "start": start_date, "end": end_date}
+            """,
+            (tenant_id, start_date, end_date)
         ).fetchall()
         
         return [
@@ -488,8 +486,8 @@ class MetricsService:
         cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
         
         result = self.db.execute(
-            text("DELETE FROM tenant_metrics WHERE period_start < :cutoff_date"),
-            {"cutoff_date": cutoff_date}
+            "DELETE FROM tenant_metrics WHERE period_start < ?",
+            (cutoff_date,)
         )
         self.db.commit()
         

@@ -17,7 +17,7 @@ def find_products(search: str = None, category_slug: str = None):
         params['category'] = category_slug
     
     try:
-        response = requests.get(f"{ECOMMERCE_API_URL}/products", params=params)
+        response = requests.get(f"{ECOMMERCE_API_URL}/products", params=params, timeout=10)
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -30,7 +30,7 @@ def get_all_categories():
     Useful when a user asks 'what do you sell?' or 'show me categories'.
     """
     try:
-        response = requests.get(f"{ECOMMERCE_API_URL}/categories")
+        response = requests.get(f"{ECOMMERCE_API_URL}/categories", timeout=10)
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -46,7 +46,7 @@ def get_my_orders(user_id: str):
         return {"error": "User ID is required to fetch orders"}
         
     try:
-        response = requests.get(f"{ECOMMERCE_API_URL}/orders", params={"user_id": user_id})
+        response = requests.get(f"{ECOMMERCE_API_URL}/orders", params={"user_id": user_id}, timeout=10)
         response.raise_for_status()
         return response.json()
     except Exception as e:

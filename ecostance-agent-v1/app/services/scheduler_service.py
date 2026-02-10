@@ -352,12 +352,12 @@ class SchedulerService:
             
             # Reset daily usage counters
             db.execute(
-                text("""
+                """
                 UPDATE tenant_quota_usage
-                SET query_count = 0, api_calls_count = 0, updated_at = :now
-                WHERE period_type = 'daily' AND period_start = :period_start
-                """),
-                {"now": now, "period_start": period_start}
+                SET query_count = 0, api_calls_count = 0, updated_at = ?
+                WHERE period_type = 'daily' AND period_start = ?
+                """,
+                (now, period_start)
             )
             db.commit()
             
@@ -375,12 +375,12 @@ class SchedulerService:
             
             # Reset monthly usage counters
             db.execute(
-                text("""
+                """
                 UPDATE tenant_quota_usage
-                SET query_count = 0, updated_at = :now
-                WHERE period_type = 'monthly' AND period_start = :period_start
-                """),
-                {"now": now, "period_start": period_start}
+                SET query_count = 0, updated_at = ?
+                WHERE period_type = 'monthly' AND period_start = ?
+                """,
+                (now, period_start)
             )
             db.commit()
             

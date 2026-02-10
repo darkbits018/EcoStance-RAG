@@ -14,4 +14,4 @@ AGENT_MODEL = os.getenv("AGENT_MODEL", "gemini-2.5-flash-lite")
 AGENT_TEMPERATURE = float(os.getenv("AGENT_TEMPERATURE", "0.3"))
 
 # --- E-Commerce API Configuration ---
-ECOMMERCE_API_URL = os.getenv("ECOMMERCE_API_URL", "http://localhost:3000/api")
+ECOMMERCE_API_URL = os.getenv("ECOMMERCE_API_URL", "http://localhost:5000/api")

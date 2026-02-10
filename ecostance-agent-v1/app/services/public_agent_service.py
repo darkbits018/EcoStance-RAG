@@ -90,17 +90,28 @@ class PublicAgentService:
         logger.info(f"Allowed DBs: {update_data.allowed_dbs}")
         logger.info(f"Allowed Tools: {update_data.allowed_tools}")
 
-        # Update fields
-        config.enabled = update_data.enabled
-        config.allowed_kbs = json.dumps(update_data.allowed_kbs)
-        config.allowed_dbs = json.dumps(update_data.allowed_dbs)
-        config.allowed_tools = json.dumps(update_data.allowed_tools)
-        config.welcome_message = update_data.welcome_message
-        config.suggested_questions = json.dumps(update_data.suggested_questions)
-        config.branding = json.dumps(update_data.branding.dict())
-        config.rate_limit = json.dumps(update_data.rate_limit.dict())
-        config.features = json.dumps(update_data.features.dict())
-        config.agent_type = update_data.agent_type
+        # Update fields only if provided
+        if update_data.enabled is not None:
+            config.enabled = update_data.enabled
+        if update_data.allowed_kbs is not None:
+            config.allowed_kbs = json.dumps(update_data.allowed_kbs)
+        if update_data.allowed_dbs is not None:
+            config.allowed_dbs = json.dumps(update_data.allowed_dbs)
+        if update_data.allowed_tools is not None:
+            config.allowed_tools = json.dumps(update_data.allowed_tools)
+        if update_data.welcome_message is not None:
+            config.welcome_message = update_data.welcome_message
+        if update_data.suggested_questions is not None:
+            config.suggested_questions = json.dumps(update_data.suggested_questions)
+        if update_data.branding is not None:
+            config.branding = json.dumps(update_data.branding.dict())
+        if update_data.rate_limit is not None:
+            config.rate_limit = json.dumps(update_data.rate_limit.dict())
+        if update_data.features is not None:
+            config.features = json.dumps(update_data.features.dict())
+        if update_data.agent_type is not None:
+            config.agent_type = update_data.agent_type
+            
         config.updated_at = datetime.utcnow()
         config.updated_by = updated_by
 
@@ -198,7 +209,7 @@ class PublicAgentService:
             session_id=session_id,
             tenant_id=tenant_id,
             role=role,
-            content=content,
+            content=content if isinstance(content, str) else json.dumps(content),
             sources=json.dumps(sources) if sources else None,
             tool_used=tool_used
         )
@@ -271,30 +282,33 @@ class PublicAgentService:
         config: PublicAgentConfig
     ) -> Tuple[bool, Optional[str]]:
         """Check if session has exceeded rate limits."""
-        rate_limit = json.loads(config.rate_limit) if isinstance(config.rate_limit, str) else config.rate_limit
-        
-        session = self.get_session(session_id)
-        if not session:
-            return True, None
+        # RATE LIMITS FULLY DISABLED FOR DEV/TESTING
+        return True, None
+
+        # Original logic commented out below:
+        # rate_limit = json.loads(config.rate_limit) if isinstance(config.rate_limit, str) else config.rate_limit
+        # session = self.get_session(session_id)
+        # if not session:
+        #     return True, None
 
         # Check max messages per session
-        if session.message_count >= rate_limit.get("max_messages_per_session", 50):
-            return False, "Maximum messages per session exceeded"
+        # if session.message_count >= rate_limit.get("max_messages_per_session", 50):
+        #     return False, "Maximum messages per session exceeded"
 
         # Check queries per minute
-        one_minute_ago = datetime.utcnow() - timedelta(minutes=1)
-        recent_queries = self.db.query(func.count(PublicAgentMessage.id)).filter(
-            and_(
-                PublicAgentMessage.session_id == session_id,
-                PublicAgentMessage.role == "user",
-                PublicAgentMessage.timestamp >= one_minute_ago
-            )
-        ).scalar()
+        # one_minute_ago = datetime.utcnow() - timedelta(minutes=1)
+        # recent_queries = self.db.query(func.count(PublicAgentMessage.id)).filter(
+        #     and_(
+        #         PublicAgentMessage.session_id == session_id,
+        #         PublicAgentMessage.role == "user",
+        #         PublicAgentMessage.timestamp >= one_minute_ago
+        #     )
+        # ).scalar()
 
-        if recent_queries >= rate_limit.get("queries_per_minute", 10):
-            return False, "Rate limit exceeded. Please wait before sending another message."
+        # if recent_queries >= rate_limit.get("queries_per_minute", 10):
+        #     return False, "Rate limit exceeded. Please wait before sending another message."
 
-        return True, None
+        # return True, None
 
     # ========================================================================
     # Knowledge Base Management

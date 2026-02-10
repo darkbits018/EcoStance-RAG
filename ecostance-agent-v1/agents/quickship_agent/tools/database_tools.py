@@ -1,25 +1,20 @@
 """
 Database Tools for QuickShip Logistics
 These tools allow the ReAct agent to query the QuickShip database.
+Now using hosted PostgreSQL.
 """
 
-import sqlite3
 import logging
 from langchain.tools import tool
-from ..config import QUICKSHIP_DB_PATH
+from sqlalchemy import text
+from app.db.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
 
-def get_db_connection():
-    """Helper function to get database connection"""
-    try:
-        conn = sqlite3.connect(QUICKSHIP_DB_PATH)
-        conn.row_factory = sqlite3.Row
-        return conn
-    except Exception as e:
-        logger.error(f"Database connection error: {e}")
-        raise
+def get_db():
+    """Helper function to get database session"""
+    return SessionLocal()
 
 
 @tool
@@ -35,11 +30,9 @@ def get_shipment_status(shipment_id: str) -> str:
         Shipment status, tracking number, delivery address, expected delivery date,
         actual delivery date (if delivered), charges, COD amount, and remarks
     """
+    db = get_db()
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        query = """
+        query = text("""
         SELECT s.shipment_id, s.tracking_number, s.status, 
                s.delivery_address, s.pincode, s.expected_delivery_date, 
                s.actual_delivery_date, s.charges, s.cod_amount, s.remarks,
@@ -48,12 +41,10 @@ def get_shipment_status(shipment_id: str) -> str:
         FROM shipments s
         JOIN customers c ON s.customer_id = c.customer_id
         LEFT JOIN delivery_boys d ON s.delivery_boy_id = d.boy_id
-        WHERE s.shipment_id = ?
-        """
+        WHERE s.shipment_id = :shipment_id
+        """)
         
-        cursor.execute(query, (shipment_id,))
-        result = cursor.fetchone()
-        conn.close()
+        result = db.execute(query, {"shipment_id": shipment_id}).mappings().first()
         
         if not result:
             return f"No shipment found with ID {shipment_id}. Please check the shipment ID and try again."
@@ -94,6 +85,8 @@ COD Amount: ₹{result['cod_amount']}
     except Exception as e:
         logger.error(f"Error in get_shipment_status: {e}")
         return f"Error retrieving shipment information: {str(e)}"
+    finally:
+        db.close()
 
 
 @tool
@@ -112,35 +105,32 @@ def search_shipments_by_customer(phone: str = None, email: str = None) -> str:
     if not phone and not email:
         return "Please provide either phone number or email address to search for shipments."
     
+    db = get_db()
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
         if phone:
-            query = """
+            query = text("""
             SELECT s.shipment_id, s.tracking_number, s.status, 
                    s.shipment_date, s.expected_delivery_date, s.actual_delivery_date,
                    s.delivery_address, s.charges, c.name
             FROM shipments s
             JOIN customers c ON s.customer_id = c.customer_id
-            WHERE c.phone = ?
+            WHERE c.phone = :phone
             ORDER BY s.shipment_date DESC
-            """
-            cursor.execute(query, (phone,))
+            """)
+            result_proxy = db.execute(query, {"phone": phone})
         else:
-            query = """
+            query = text("""
             SELECT s.shipment_id, s.tracking_number, s.status, 
                    s.shipment_date, s.expected_delivery_date, s.actual_delivery_date,
                    s.delivery_address, s.charges, c.name
             FROM shipments s
             JOIN customers c ON s.customer_id = c.customer_id
-            WHERE c.email = ?
+            WHERE c.email = :email
             ORDER BY s.shipment_date DESC
-            """
-            cursor.execute(query, (email,))
+            """)
+            result_proxy = db.execute(query, {"email": email})
         
-        results = cursor.fetchall()
-        conn.close()
+        results = result_proxy.mappings().all()
         
         if not results:
             return f"No shipments found for {'phone ' + phone if phone else 'email ' + email}."
@@ -163,6 +153,8 @@ def search_shipments_by_customer(phone: str = None, email: str = None) -> str:
     except Exception as e:
         logger.error(f"Error in search_shipments_by_customer: {e}")
         return f"Error searching for shipments: {str(e)}"
+    finally:
+        db.close()
 
 
 @tool
@@ -177,22 +169,18 @@ def track_by_tracking_number(tracking_number: str) -> str:
     Returns:
         Current status, location, expected delivery, and delivery boy details
     """
+    db = get_db()
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        query = """
-        SELECT s.*, c.name as customer_name, c.phone, c.city as customer_city,
+        query = text("""
+        SELECT s.*, c.name as customer_name, c.phone, c.address as customer_city,
                d.name as delivery_boy_name, d.phone as delivery_boy_phone, d.vehicle_number
         FROM shipments s
         JOIN customers c ON s.customer_id = c.customer_id
         LEFT JOIN delivery_boys d ON s.delivery_boy_id = d.boy_id
-        WHERE s.tracking_number = ?
-        """
+        WHERE s.tracking_number = :tracking_number
+        """)
         
-        cursor.execute(query, (tracking_number,))
-        result = cursor.fetchone()
-        conn.close()
+        result = db.execute(query, {"tracking_number": tracking_number}).mappings().first()
         
         if not result:
             return f"No shipment found with tracking number {tracking_number}."
@@ -232,6 +220,8 @@ Expected Delivery: {result['expected_delivery_date']}
     except Exception as e:
         logger.error(f"Error in track_by_tracking_number: {e}")
         return f"Error tracking shipment: {str(e)}"
+    finally:
+        db.close()
 
 
 @tool
@@ -246,20 +236,16 @@ def get_delivery_estimate(shipment_id: str) -> str:
     Returns:
         Expected delivery date, actual delivery date (if delivered), and current status
     """
+    db = get_db()
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        query = """
+        query = text("""
         SELECT shipment_id, status, shipment_date, expected_delivery_date, 
                actual_delivery_date, delivery_address
         FROM shipments
-        WHERE shipment_id = ?
-        """
+        WHERE shipment_id = :shipment_id
+        """)
         
-        cursor.execute(query, (shipment_id,))
-        result = cursor.fetchone()
-        conn.close()
+        result = db.execute(query, {"shipment_id": shipment_id}).mappings().first()
         
         if not result:
             return f"No shipment found with ID {shipment_id}."
@@ -282,6 +268,8 @@ def get_delivery_estimate(shipment_id: str) -> str:
     except Exception as e:
         logger.error(f"Error in get_delivery_estimate: {e}")
         return f"Error getting delivery estimate: {str(e)}"
+    finally:
+        db.close()
 
 
 @tool
@@ -296,21 +284,17 @@ def check_cod_payment_status(shipment_id: str) -> str:
     Returns:
         Payment mode, amount, payment status, and collection date
     """
+    db = get_db()
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        query = """
+        query = text("""
         SELECT p.payment_mode, p.amount_paid, p.payment_date, p.cod_collected_date,
                s.cod_amount, s.charges, s.status
         FROM payments p
         JOIN shipments s ON p.shipment_id = s.shipment_id
-        WHERE p.shipment_id = ?
-        """
+        WHERE p.shipment_id = :shipment_id
+        """)
         
-        cursor.execute(query, (shipment_id,))
-        result = cursor.fetchone()
-        conn.close()
+        result = db.execute(query, {"shipment_id": shipment_id}).mappings().first()
         
         if not result:
             return f"No payment information found for shipment {shipment_id}."
@@ -338,6 +322,8 @@ Shipment Charges: ₹{result['charges']}
     except Exception as e:
         logger.error(f"Error in check_cod_payment_status: {e}")
         return f"Error checking payment status: {str(e)}"
+    finally:
+        db.close()
 
 
 @tool
@@ -352,20 +338,17 @@ def get_complaint_status(shipment_id: str) -> str:
     Returns:
         Complaint details, status, type, and refund information
     """
+    db = get_db()
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        query = """
+        query = text("""
         SELECT complaint_id, complaint_type, date, status, refund_amount
         FROM complaints
-        WHERE shipment_id = ?
+        WHERE shipment_id = :shipment_id
         ORDER BY date DESC
-        """
+        """)
         
-        cursor.execute(query, (shipment_id,))
-        results = cursor.fetchall()
-        conn.close()
+        result_proxy = db.execute(query, {"shipment_id": shipment_id})
+        results = result_proxy.mappings().all()
         
         if not results:
             return f"No complaints found for shipment {shipment_id}. ✅"
@@ -386,3 +369,25 @@ def get_complaint_status(shipment_id: str) -> str:
     except Exception as e:
         logger.error(f"Error in get_complaint_status: {e}")
         return f"Error checking complaints: {str(e)}"
+    finally:
+        db.close()
+
+
+# Group tools into categories for the agent to use
+TOOL_CATEGORIES = {
+    "tracking": [
+        get_shipment_status,
+        search_shipments_by_customer,
+        track_by_tracking_number,
+        get_delivery_estimate
+    ],
+    "payments": [
+        check_cod_payment_status
+    ],
+    "complaints": [
+        get_complaint_status
+    ],
+    "delivery_estimates": [
+        get_delivery_estimate
+    ]
+}
