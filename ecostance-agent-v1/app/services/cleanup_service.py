@@ -7,6 +7,7 @@ import shutil
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from qdrant_client import QdrantClient
 
 from app.models.tenant import Tenant
@@ -100,18 +101,18 @@ class CleanupService:
                 try:
                     # Count related records before deletion
                     db_count = self.db.execute(
-                        "SELECT COUNT(*) FROM tenant_databases WHERE tenant_id = ?",
-                        (tenant_id,)
+                        text("SELECT COUNT(*) FROM tenant_databases WHERE tenant_id = :tenant_id"),
+                        {"tenant_id": tenant_id}
                     ).fetchone()[0]
                     
                     kb_count = self.db.execute(
-                        "SELECT COUNT(*) FROM tenant_knowledge_bases WHERE tenant_id = ?",
-                        (tenant_id,)
+                        text("SELECT COUNT(*) FROM tenant_knowledge_bases WHERE tenant_id = :tenant_id"),
+                        {"tenant_id": tenant_id}
                     ).fetchone()[0]
                     
                     user_count = self.db.execute(
-                        "SELECT COUNT(*) FROM tenant_users WHERE tenant_id = ?",
-                        (tenant_id,)
+                        text("SELECT COUNT(*) FROM tenant_users WHERE tenant_id = :tenant_id"),
+                        {"tenant_id": tenant_id}
                     ).fetchone()[0]
                     
                     results["database_records_deleted"] = db_count + kb_count + user_count + 1
@@ -216,8 +217,8 @@ class CleanupService:
             # Move old logs to archive table (if you have one)
             # For now, just delete very old logs
             result = self.db.execute(
-                "DELETE FROM audit_logs WHERE timestamp < ?",
-                (cutoff_date,)
+                text("DELETE FROM audit_logs WHERE timestamp < :cutoff_date"),
+                {"cutoff_date": cutoff_date}
             )
             self.db.commit()
             
