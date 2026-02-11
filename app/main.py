@@ -13,7 +13,7 @@ from .middleware.usage_tracking_middleware import UsageTrackingMiddleware
 # LangSmith middleware removed - limiting tracing to embedding, RAG, and agent only
 
 # Import QuickShip AI Agent
-from quickship_agent.router import router as agent_router
+from agents.quickship_agent.router import router as agent_router
 
 # === BEGIN: branch error handling ===
 # Import new error handling infrastructure
@@ -218,6 +218,7 @@ app.add_middleware(
         "http://127.0.0.1:3001",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:8501",
+        "https://ecostance-ai-widget.pages.dev", # Production Widget
         # For development, you can also use:
         # "*"  # Allow all origins (NOT recommended for production)
     ],

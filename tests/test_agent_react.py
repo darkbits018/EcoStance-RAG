@@ -4,7 +4,7 @@ Test the ReAct agent implementation
 import sys
 sys.path.insert(0, 'quickship_agent')
 
-from quickship_agent.agent_service import agent_service
+from agents.quickship_agent.agent_service import agent_service
 
 print("🤖 Testing ReAct Agent Implementation\n")
 print("=" * 60)

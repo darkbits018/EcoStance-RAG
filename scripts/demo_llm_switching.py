@@ -7,8 +7,8 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from quickship_agent.agent_service import AgentService
-from quickship_agent.llm_factory import LLMFactory
+from agents.quickship_agent.agent_service import AgentService
+from agents.quickship_agent.llm_factory import LLMFactory
 import logging
 
 # Set up logging

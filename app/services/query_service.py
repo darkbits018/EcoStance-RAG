@@ -1,5 +1,4 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_qdrant import Qdrant
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
@@ -84,6 +83,10 @@ def get_retriever(collection_name: str, top_k: int = 5):
     """
     # === BEGIN: branch error handling ===
     try:
+        from .qdrant_service import get_qdrant_client
+        from .embedding_service import load_embedding_model
+        from langchain_qdrant import QdrantVectorStore
+
         if not collection_name or not collection_name.strip():
             raise ValidationError(
                 message="Collection name cannot be empty",
@@ -103,16 +106,22 @@ def get_retriever(collection_name: str, top_k: int = 5):
             top_k=top_k
         )
         
-        embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-        qdrant_store = Qdrant.from_existing_collection(
-            url=QDRANT_URL,
-            api_key=QDRANT_API_KEY,
+        # Use singletons
+        base_model = load_embedding_model()
+        embeddings = HuggingFaceEmbeddings(
+            model_name=EMBEDDING_MODEL_NAME,
+            client=base_model
+        )
+        
+        client = get_qdrant_client()
+        
+        qdrant_store = QdrantVectorStore(
+            client=client,
             collection_name=collection_name,
             embedding=embeddings,
             content_payload_key="text",
         )
-        # Retrieve more chunks for better context coverage
-        # Higher k = more context but slower, lower k = faster but might miss info
+        
         retriever = qdrant_store.as_retriever(search_kwargs={"k": top_k})
         
         log_operation_success(

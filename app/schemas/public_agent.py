@@ -14,7 +14,7 @@ import re
 class ConversationMessage(BaseModel):
     """Single message in conversation history."""
     role: str = Field(..., description="Role: 'user' or 'assistant'")
-    content: str = Field(..., description="Message content")
+    content: Any = Field(..., description="Message content")
 
     @validator('role')
     def validate_role(cls, v):
@@ -28,6 +28,8 @@ class PublicAgentChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=100, description="Unique session identifier")
     message: str = Field(..., min_length=1, max_length=2000, description="User message")
     conversation_history: Optional[List[ConversationMessage]] = Field(default=[], description="Previous conversation")
+    agent_type: Optional[str] = Field(None, description="Optional agent type override (quickship, ecommerce, etc.)")
+    user_language: Optional[str] = Field(None, description="Optional user language preference (en, es, fr, etc.)")
 
 
 class SourceInfo(BaseModel):
@@ -40,7 +42,7 @@ class SourceInfo(BaseModel):
 
 class PublicAgentChatResponse(BaseModel):
     """Response for public agent chat."""
-    response: str = Field(..., description="AI-generated response")
+    response: Any = Field(..., description="AI-generated response")
     sources: Optional[List[SourceInfo]] = Field(default=[], description="Source documents")
     tool_used: Optional[str] = Field(None, description="Tool that was used (database/knowledge_base)")
     session_id: str = Field(..., description="Session identifier")
@@ -143,27 +145,30 @@ class AdminPublicAgentConfigResponse(BaseModel):
 
 class AdminPublicAgentConfigUpdate(BaseModel):
     """Request to update configuration."""
-    enabled: bool
-    allowed_kbs: List[str] = Field(..., description="List of KB IDs")
-    allowed_dbs: List[str] = Field(..., description="List of database connection IDs")
-    allowed_tools: List[str] = Field(..., description="Allowed tool categories: tracking, payments, complaints, delivery_estimates")
-    welcome_message: str = Field(..., min_length=1, max_length=500)
-    suggested_questions: List[str] = Field(..., max_items=10, description="Max 10 questions")
-    branding: BrandingConfig
-    rate_limit: RateLimitConfig
-    features: FeaturesConfig
-    agent_type: str = Field("quickship", description="Type of agent (e.g., quickship, ecommerce)")
+    enabled: Optional[bool] = None
+    allowed_kbs: Optional[List[str]] = Field(None, description="List of KB IDs")
+    allowed_dbs: Optional[List[str]] = Field(None, description="List of database connection IDs")
+    allowed_tools: Optional[List[str]] = Field(None, description="Allowed tool categories")
+    welcome_message: Optional[str] = Field(None, min_length=1, max_length=500)
+    suggested_questions: Optional[List[str]] = Field(None, max_items=10, description="Max 10 questions")
+    branding: Optional[BrandingConfig] = None
+    rate_limit: Optional[RateLimitConfig] = None
+    features: Optional[FeaturesConfig] = None
+    agent_type: Optional[str] = Field(None, description="Type of agent (e.g., quickship, ecommerce)")
 
     @validator('agent_type')
     def validate_agent_type(cls, v):
-        valid_agents = ['quickship', 'ecommerce', 'realestate', 'generic']
+        valid_agents = ['quickship', 'ecommerce', 'ecostance', 'realestate', 'generic']
         if v not in valid_agents:
             raise ValueError(f"Invalid agent type: {v}. Must be one of: {', '.join(valid_agents)}")
         return v
 
     @validator('allowed_tools')
     def validate_allowed_tools(cls, v):
-        valid_tools = ['tracking', 'payments', 'complaints', 'delivery_estimates', 'customer_search']
+        valid_tools = [
+            'tracking', 'payments', 'complaints', 'delivery_estimates', 'customer_search',
+            'certificates', 'shopping', 'impact', 'faq'
+        ]
         for tool in v:
             if tool not in valid_tools:
                 raise ValueError(f"Invalid tool: {tool}. Must be one of: {', '.join(valid_tools)}")
@@ -290,7 +295,7 @@ class SessionMessage(BaseModel):
     """Message in session details."""
     id: str
     role: str
-    content: str
+    content: Any
     timestamp: str
     sources: Optional[List[SourceInfo]] = None
     tool_used: Optional[str] = None

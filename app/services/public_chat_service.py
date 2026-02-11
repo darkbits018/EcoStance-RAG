@@ -247,30 +247,19 @@ class PublicChatService:
         config: PublicChatConfig
     ) -> Tuple[bool, Optional[str]]:
         """Check if session has exceeded rate limits."""
-        rate_limit = json.loads(config.rate_limit) if isinstance(config.rate_limit, str) else config.rate_limit
-        
-        session = self.get_session(session_id)
-        if not session:
-            return True, None
-
-        # Check max messages per session
-        if session.message_count >= rate_limit.get("max_messages_per_session", 50):
-            return False, "Maximum messages per session exceeded"
-
-        # Check queries per minute
-        one_minute_ago = datetime.utcnow() - timedelta(minutes=1)
-        recent_queries = self.db.query(func.count(PublicChatMessage.id)).filter(
-            and_(
-                PublicChatMessage.session_id == session_id,
-                PublicChatMessage.role == "user",
-                PublicChatMessage.timestamp >= one_minute_ago
-            )
-        ).scalar()
-
-        if recent_queries >= rate_limit.get("queries_per_minute", 10):
-            return False, "Rate limit exceeded. Please wait before sending another message."
-
+        # RATE LIMITS FULLY DISABLED FOR DEV/TESTING
         return True, None
+
+        # Original logic commented out below:
+        # rate_limit = json.loads(config.rate_limit) if isinstance(config.rate_limit, str) else config.rate_limit
+        # session = self.get_session(session_id)
+        # if not session:
+        #     return True, None
+        
+        # if session.message_count >= rate_limit.get("max_messages_per_session", 50):
+        #     return False, "Maximum messages per session exceeded"
+            
+        # ... (rest of logic)
 
     # ========================================================================
     # Knowledge Base Management

@@ -1,7 +1,7 @@
 """
 Test script for public agent tool restrictions
 """
-from quickship_agent.public_agent_service import PublicAgentService
+from agents.quickship_agent.public_agent_service import PublicAgentService
 
 # Test 1: Full access
 print("=" * 60)

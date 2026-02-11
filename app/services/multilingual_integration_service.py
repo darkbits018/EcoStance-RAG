@@ -53,7 +53,7 @@ class MultilingualIntegrationService:
     
     def get_agent_service(self, tenant_id: str = None, **kwargs):
         """Get multilingual agent service - no fallback to legacy."""
-        from quickship_agent.multilingual_agent_service import MultilingualAgentService
+        from agents.quickship_agent.multilingual_agent_service import MultilingualAgentService
         return MultilingualAgentService(tenant_id=tenant_id, **kwargs)
     
     def process_file_with_best_service(self, file_path: str, collection_name: str, 
@@ -113,7 +113,7 @@ class MultilingualIntegrationService:
             }
         
         try:
-            from quickship_agent.services.language_service import get_language_service
+            from .language_service import get_language_service
             lang_service = get_language_service()
             status["language_service"] = {
                 "available": True,

@@ -146,7 +146,7 @@ async def query_public_chat(
             )
         
         # Use multilingual RAG service for better compatibility
-        from quickship_agent.services.multilingual_rag_service import get_multilingual_rag_service
+        from agents.quickship_agent.services.multilingual_rag_service import get_multilingual_rag_service
         from app.config.multilingual_app_config import should_use_multilingual_processing
         from ..services.qdrant_service import get_qdrant_client
         from ..services.tenant_service import get_tenant_service
