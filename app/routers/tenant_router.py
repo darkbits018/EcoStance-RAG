@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 import re
 import bcrypt
@@ -18,7 +18,14 @@ from ..models.tenant import Tenant
 from ..models.tenant_user import TenantUser
 from ..auth.dependencies import get_tenant_id
 from ..auth.permissions import SystemRole
-from ..schemas.tenant import TenantProfileUpdate, NotificationPreferences, TenantResponse
+from ..services.quota_service import QuotaService
+from ..schemas.tenant import (
+    TenantProfileUpdate, 
+    NotificationPreferences, 
+    TenantResponse,
+    TenantCreateRequest,
+    TenantUpdateRequest
+)
 
 router = APIRouter()
 
@@ -31,39 +38,7 @@ MAX_LOGO_SIZE = 5 * 1024 * 1024  # 5MB
 os.makedirs(LOGO_UPLOAD_DIR, exist_ok=True)
 
 
-class TenantCreateRequest(BaseModel):
-    """Tenant creation request model."""
-    name: str
-    email: str
-    password: str
-    phone: Optional[str] = None
-    billing_tier: str = "free"
 
-
-class TenantUpdateRequest(BaseModel):
-    """Tenant update request model."""
-    name: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    is_active: Optional[bool] = None
-    billing_tier: Optional[str] = None
-    settings: Optional[dict] = None
-
-
-class TenantResponse(BaseModel):
-    """Tenant response model."""
-    id: str
-    name: str
-    slug: str
-    email: Optional[str]
-    phone: Optional[str]
-    is_active: bool
-    created_at: datetime
-    billing_tier: str
-    billing_status: str
-    
-    class Config:
-        from_attributes = True
 
 
 def generate_slug(name: str) -> str:
@@ -118,15 +93,8 @@ async def register_tenant(
         is_active=True,
         billing_tier=request.billing_tier,
         billing_status="active",
-        settings={
-            "max_storage_bytes": 10737418240,  # 10GB
-            "max_queries_per_day": 1000,
-            "max_queries_per_month": 30000,
-            "max_documents": 10000,
-            "max_db_connections": 5,
-            "features": ["rag", "db_chat"],
-            "region": "default"
-        }
+        trial_ends_at=datetime.utcnow() + timedelta(days=14),
+        settings=QuotaService.TIER_QUOTAS.get(request.billing_tier, QuotaService.TIER_QUOTAS["free_trial"])
     )
     
     db.add(tenant)

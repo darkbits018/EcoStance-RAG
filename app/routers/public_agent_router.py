@@ -199,9 +199,19 @@ async def chat_with_public_agent(
         # Determine agent type: Request override > Config
         target_agent_type = request_data.agent_type or config.agent_type
         AgentServiceClass = AGENT_MAPPING.get(target_agent_type, GenericAgentService)
-        logger.info(f"Using agent type: {target_agent_type} (Requested: {request_data.agent_type}, Config: {config.agent_type}) for tenant {tenant_id}")
         
-        agent = AgentServiceClass(tenant_id=tenant_id, allowed_tools=allowed_tools)
+        # Get naming info for neutral generic agent from config
+        branding = json.loads(config.branding) if isinstance(config.branding, str) else config.branding
+        company_name = branding.get("company_name", "Assistant")
+        
+        logger.info(f"Using agent type: {target_agent_type} for tenant {tenant_id}")
+        
+        # Direct initialization from config and session data
+        agent = AgentServiceClass(
+            tenant_id=tenant_id, 
+            allowed_tools=allowed_tools,
+            company_name=company_name
+        )
         
         # Determine which KB to use (first allowed KB)
         kb_name = allowed_kbs[0] if allowed_kbs and features.get("enable_knowledge_base") else None
@@ -211,8 +221,6 @@ async def chat_with_public_agent(
         
         logger.info(f"Public agent chat for tenant {tenant_id}")
         logger.info(f"Message: {request_data.message}")
-        logger.info(f"KB: {kb_name}, DB: {db_connection}")
-        logger.info(f"Allowed tools: {allowed_tools}")
         
         # Validate that the requested KB/DB are in the allowed list for this tenant
         if kb_name and kb_name not in allowed_kbs:
@@ -497,6 +505,65 @@ async def update_admin_config(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while updating configuration"
+        )
+
+
+@router.get(
+    "/api/v1/superadmin/public-agent/config/{tenant_id}",
+    response_model=AdminPublicAgentConfigResponse,
+    dependencies=[Depends(require_super_admin)],
+    tags=["Public Agent SuperAdmin"]
+)
+async def superadmin_get_config(
+    tenant_id: str,
+    current_user: TenantUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the public agent configuration for A SPECIFIC tenant.
+    
+    Requires SUPER_ADMIN role.
+    """
+    try:
+        service = PublicAgentService(db)
+        
+        # Verify tenant exists
+        from ..models.tenant import Tenant
+        tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        if not tenant:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tenant {tenant_id} not found"
+            )
+        
+        tenant_name = tenant.name
+        
+        config = service.get_or_create_config(tenant_id, tenant_name)
+        config_dict = config.to_dict(include_sensitive=True)
+        
+        return AdminPublicAgentConfigResponse(
+            enabled=config_dict["enabled"],
+            allowed_kbs=config_dict["allowed_kbs"],
+            allowed_dbs=config_dict["allowed_dbs"],
+            allowed_tools=config_dict.get("allowed_tools", ["tracking", "payments", "complaints", "delivery_estimates"]),
+            welcome_message=config_dict["welcome_message"],
+            suggested_questions=config_dict["suggested_questions"],
+            branding=BrandingConfig(**config_dict["branding"]),
+            rate_limit=RateLimitConfig(**config_dict["rate_limit"]),
+            features=FeaturesConfig(**config_dict["features"]),
+            agent_type=config_dict.get("agent_type", "quickship"),
+            created_at=config_dict.get("created_at"),
+            updated_at=config_dict.get("updated_at"),
+            updated_by=config_dict.get("updated_by")
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in superadmin get config: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching tenant configuration: {str(e)}"
         )
 
 

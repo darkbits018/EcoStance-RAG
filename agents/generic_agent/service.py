@@ -20,7 +20,7 @@ from app.services.multilingual_utils import MultilingualAgentMixin
 logger = logging.getLogger(__name__)
 
 GENERIC_SYSTEM_PROMPTS = {
-    "en": """You are a helpful AI Assistant.
+    "en": """You are a helpful AI Assistant for {company_name}.
 Your goal is to answer questions using the available knowledge base and database.
 Respond in the same language as the customer's question.
 
@@ -30,7 +30,7 @@ GUIDELINES:
 3. Be concise and professional.
 4. If you don't know the answer, say so.
 """,
-    "es": """Eres un Asistente de IA servicial.
+    "es": """Eres un Asistente de IA servicial para {company_name}.
 Tu objetivo es responder preguntas utilizando la base de conocimientos y la base de datos disponibles.
 Responde en el mismo idioma que la pregunta del cliente.
 
@@ -39,7 +39,7 @@ PAUTAS:
 2. Usa `query_database` para datos estructurados si conoces el esquema.
 3. Sé conciso y profesional.
 """,
-    "fr": """Vous êtes un assistant IA serviable.
+    "fr": """Vous êtes un assistant IA serviable pour {company_name}.
 Votre objectif est de répondre aux questions en utilisant la base de connaissances et la base de données disponibles.
 Répondez dans la même langue que la question du client.
 
@@ -54,8 +54,18 @@ DIRECTIVES:
 SAFE_GENERIC_TOOLS = {"knowledge_base", "database_query"}
 
 class GenericAgentService(MultilingualAgentMixin):
-    def __init__(self, tenant_id: str = None, allowed_tools: List[str] = None, **kwargs):
-        super().__init__(system_prompts=GENERIC_SYSTEM_PROMPTS)
+    def __init__(self, tenant_id: str = None, company_name: str = "Common Assistant", allowed_tools: List[str] = None, custom_system_prompt: str = None, **kwargs):
+        # Use custom prompt if provided, otherwise default to neutral generic prompts
+        system_prompts = GENERIC_SYSTEM_PROMPTS.copy()
+        if custom_system_prompt:
+            # For Enterprise: Use the custom prompt as the English default
+            system_prompts["en"] = custom_system_prompt
+        else:
+            # Format generic prompts with company name
+            for lang in system_prompts:
+                system_prompts[lang] = system_prompts[lang].format(company_name=company_name)
+            
+        super().__init__(system_prompts=system_prompts)
         
         self.llm = ChatGoogleGenerativeAI(
             model=AGENT_MODEL,
@@ -63,6 +73,7 @@ class GenericAgentService(MultilingualAgentMixin):
             temperature=AGENT_TEMPERATURE
         )
         self.tenant_id = tenant_id
+        self.company_name = company_name
         
         # Validate allowed tools
         requested_tools = allowed_tools if allowed_tools is not None else ["knowledge_base", "database_query"]

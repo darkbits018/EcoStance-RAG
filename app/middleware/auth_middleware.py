@@ -32,7 +32,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/health",
         "/api/v1/system/health",
         "/api/v1/auth/login",
-        "/api/v1/auth/register"
+        "/api/v1/auth/register",
+        "/api/v1/tenants/register"
     ]
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
