@@ -60,6 +60,8 @@ class Tenant(Base):
     users = relationship("TenantUser", back_populates="tenant", cascade="all, delete-orphan")
     roles = relationship("TenantRole", back_populates="tenant", cascade="all, delete-orphan")
     quotas = relationship("TenantQuota", back_populates="tenant", cascade="all, delete-orphan")
+    subscription = relationship("BillingSubscription", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
+    transactions = relationship("BillingTransaction", back_populates="tenant", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Tenant(id={self.id}, name={self.name}, slug={self.slug})>"

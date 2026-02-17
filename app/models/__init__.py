@@ -9,6 +9,7 @@ from .tenant_role import TenantRole
 from .tenant_quota import TenantQuota
 from .audit_log import AuditLog
 from .custom_crm import CustomCRMEmail
+from .billing import BillingSubscription, BillingTransaction
 
 __all__ = [
     "Tenant",
@@ -18,5 +19,7 @@ __all__ = [
     "TenantRole",
     "TenantQuota",
     "AuditLog",
-    "CustomCRMEmail"
+    "CustomCRMEmail",
+    "BillingSubscription",
+    "BillingTransaction"
 ]
