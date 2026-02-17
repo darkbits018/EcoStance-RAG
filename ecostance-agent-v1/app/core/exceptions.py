@@ -27,11 +27,12 @@ class ValidationError(BaseAppException):
     """Raised when input validation fails."""
     
     def __init__(self, message: str, field: Optional[str] = None, **kwargs):
+        remediation = kwargs.pop("remediation", "Please check your input and try again.")
         super().__init__(
             message=message,
             error_code="VALIDATION_ERROR",
             details={"field": field} if field else {},
-            remediation="Please check your input and try again.",
+            remediation=remediation,
             **kwargs
         )
 
@@ -40,11 +41,12 @@ class ResourceNotFoundError(BaseAppException):
     """Raised when a requested resource is not found."""
     
     def __init__(self, resource_type: str, resource_id: str, **kwargs):
+        remediation = kwargs.pop("remediation", f"Please verify the {resource_type.lower()} ID and try again.")
         super().__init__(
             message=f"{resource_type} '{resource_id}' not found",
             error_code="RESOURCE_NOT_FOUND",
             details={"resource_type": resource_type, "resource_id": resource_id},
-            remediation=f"Please verify the {resource_type.lower()} ID and try again.",
+            remediation=remediation,
             **kwargs
         )
 
@@ -60,6 +62,7 @@ class QuotaExceededError(BaseAppException):
         tenant_id: str,
         **kwargs
     ):
+        remediation = kwargs.pop("remediation", "Please upgrade your plan or contact support for higher limits.")
         super().__init__(
             message=f"{quota_type} quota exceeded: {current}/{limit}",
             error_code="QUOTA_EXCEEDED",
@@ -69,7 +72,7 @@ class QuotaExceededError(BaseAppException):
                 "limit": limit,
                 "tenant_id": tenant_id
             },
-            remediation="Please upgrade your plan or contact support for higher limits.",
+            remediation=remediation,
             **kwargs
         )
 
@@ -84,6 +87,7 @@ class ExternalServiceError(BaseAppException):
         original_error: Optional[str] = None,
         **kwargs
     ):
+        remediation = kwargs.pop("remediation", "Please try again later. If the problem persists, contact support.")
         super().__init__(
             message=f"{service_name} service error during {operation}",
             error_code="EXTERNAL_SERVICE_ERROR",
@@ -92,7 +96,7 @@ class ExternalServiceError(BaseAppException):
                 "operation": operation,
                 "original_error": original_error
             },
-            remediation="Please try again later. If the problem persists, contact support.",
+            remediation=remediation,
             **kwargs
         )
 
@@ -101,11 +105,12 @@ class DatabaseError(BaseAppException):
     """Raised when database operations fail."""
     
     def __init__(self, operation: str, original_error: Optional[str] = None, **kwargs):
+        remediation = kwargs.pop("remediation", "Please try again. If the problem persists, contact support.")
         super().__init__(
             message=f"Database error during {operation}",
             error_code="DATABASE_ERROR",
             details={"operation": operation, "original_error": original_error},
-            remediation="Please try again. If the problem persists, contact support.",
+            remediation=remediation,
             **kwargs
         )
 
@@ -114,11 +119,12 @@ class AuthenticationError(BaseAppException):
     """Raised when authentication fails."""
     
     def __init__(self, reason: str = "Invalid credentials", **kwargs):
+        remediation = kwargs.pop("remediation", "Please check your credentials and try again.")
         super().__init__(
             message=f"Authentication failed: {reason}",
             error_code="AUTHENTICATION_ERROR",
             details={"reason": reason},
-            remediation="Please check your credentials and try again.",
+            remediation=remediation,
             **kwargs
         )
 
@@ -133,6 +139,7 @@ class AuthorizationError(BaseAppException):
         tenant_id: Optional[str] = None,
         **kwargs
     ):
+        remediation = kwargs.pop("remediation", "Please contact your administrator for access permissions.")
         super().__init__(
             message=f"Access denied: cannot {action} {resource}",
             error_code="AUTHORIZATION_ERROR",
@@ -141,7 +148,7 @@ class AuthorizationError(BaseAppException):
                 "action": action,
                 "tenant_id": tenant_id
             },
-            remediation="Please contact your administrator for access permissions.",
+            remediation=remediation,
             **kwargs
         )
 

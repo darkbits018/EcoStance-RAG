@@ -207,7 +207,24 @@ def _extract_spreadsheet(file_path: str, file_type: str) -> Tuple[List[Dict[str,
                         }
                     })
         else:  # For CSV
-            df = pd.read_csv(file_path).dropna(how='all')
+            # Attempt to read CSV with different encodings
+            encodings = ['utf-8', 'cp1252', 'latin-1']
+            df = None
+            
+            for encoding in encodings:
+                try:
+                    df = pd.read_csv(file_path, encoding=encoding).dropna(how='all')
+                    logger.info(f"Successfully read CSV '{file_path}' with encoding '{encoding}'")
+                    break
+                except UnicodeDecodeError:
+                    continue
+                except Exception as e:
+                    logger.warning(f"Failed to read CSV with {encoding}: {e}")
+                    continue
+            
+            if df is None:
+                raise ValueError(f"Could not read CSV file {file_path} with any of the supported encodings ({encodings})")
+
             df = df.where(pd.notna(df), None)  # Replace NaN with None
 
             for index, row in df.iterrows():
@@ -412,8 +429,28 @@ def _extract_text(file_path: str, file_type: str) -> Tuple[List[Dict[str, Any]],
     Returns:
         A list containing a single block with the file's content.
     """
-    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-        content = f.read()
+    encodings = ['utf-8', 'cp1252', 'latin-1']
+    content = ""
+    success = False
+    
+    for encoding in encodings:
+        try:
+            with open(file_path, 'r', encoding=encoding) as f:
+                content = f.read()
+                success = True
+                logger.info(f"Successfully read text file '{file_path}' with encoding '{encoding}'")
+                break
+        except UnicodeDecodeError:
+            continue
+        except Exception as e:
+            logger.warning(f"Error reading text file with {encoding}: {e}")
+            continue
+    
+    if not success:
+        # Final fallback with errors='ignore'
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+            
     blocks = [{
         "text": content,
         "metadata": {

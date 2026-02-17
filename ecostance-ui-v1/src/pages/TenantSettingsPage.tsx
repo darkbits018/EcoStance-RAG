@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { tenantsAPI, quotaAPI, rbacAPI } from '../services/api';
+import { tenantsAPI, quotaAPI, rbacAPI, publicAgentAPI } from '../services/api';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import RoleManagement from '../components/rbac/RoleManagement';
 import UserManagement from '../components/rbac/UserManagement';
 import { usePermissions } from '../hooks/usePermissions';
-import { Settings, CreditCard, Bell, BarChart3, AlertCircle, Shield, Users, Plug } from 'lucide-react';
+import { Settings, CreditCard, Bell, BarChart3, AlertCircle, Shield, Users, Plug, Brain } from 'lucide-react';
 import GmailSettings from '../components/gmail/GmailSettings';
 import DynamicsSettings from '../components/dynamics/DynamicsSettings';
 import CustomCrmSettings from '../components/custom-crm/CustomCrmSettings';
+import { PricingGrid } from '../components/PricingGrid';
 
 interface Tenant {
   id: string;
@@ -31,11 +32,64 @@ interface QuotaStatus {
   documents: { limit: number; used: number; usage_percent: number };
 }
 
+interface AgentConfig {
+  agent_type: string;
+  enabled: boolean;
+  allowed_tools: string[];
+  branding: {
+    logo_url?: string;
+    primary_color: string;
+    company_name: string;
+  };
+}
+
+const AGENT_TYPE_INFO = {
+  generic: {
+    label: 'Generic Assistant',
+    description: 'General-purpose AI assistant',
+    color: 'bg-gray-500',
+    icon: '🤖'
+  },
+  ecommerce: {
+    label: 'E-commerce Agent',
+    description: 'Shopping and retail focused',
+    color: 'bg-blue-500',
+    icon: '🛒'
+  },
+  ecostance: {
+    label: 'EcoStance Agent',
+    description: 'Sustainability focused',
+    color: 'bg-green-500',
+    icon: '🌱'
+  },
+  quickship: {
+    label: 'QuickShip Agent',
+    description: 'Logistics and shipping focused',
+    color: 'bg-purple-500',
+    icon: '📦'
+  },
+  security_analyst: {
+    label: 'Security Analyst',
+    description: 'Security, logs, and threat analysis focused',
+    color: 'bg-red-500',
+    icon: '🛡️'
+  }
+};
+
+const DEFAULT_AGENT_INFO = {
+  label: 'AI Assistant',
+  description: 'Specialized AI assistant',
+  color: 'bg-primary',
+  icon: '🤖'
+};
+
 export default function TenantSettingsPage() {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<'profile' | 'usage' | 'billing' | 'notifications' | 'rbac' | 'integrations'>((searchParams.get('tab') as any) || 'profile');
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [quotaStatus, setQuotaStatus] = useState<QuotaStatus | null>(null);
+  const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
+  const [agentLoading, setAgentLoading] = useState(false);
   const [error, setError] = useState('');
 
   const { canManageRoles, canViewTenantSettings, loading: permissionsLoading } = usePermissions();
@@ -43,6 +97,7 @@ export default function TenantSettingsPage() {
   useEffect(() => {
     loadTenantData();
     loadQuotaStatus();
+    loadAgentConfig();
   }, []);
 
   const loadTenantData = async () => {
@@ -60,6 +115,29 @@ export default function TenantSettingsPage() {
       setQuotaStatus(response.data);
     } catch (err: any) {
       console.error('Failed to load quota:', err);
+    }
+  };
+
+  const loadAgentConfig = async () => {
+    setAgentLoading(true);
+    try {
+      // Try to get the current tenant's agent configuration
+      const config = await publicAgentAPI.admin.getConfig();
+      setAgentConfig(config as AgentConfig);
+    } catch (err: any) {
+      console.error('Failed to load agent config:', err);
+      // Set default if no config exists
+      setAgentConfig({
+        agent_type: 'generic',
+        enabled: false,
+        allowed_tools: [],
+        branding: {
+          primary_color: '#0066CC',
+          company_name: tenant?.name || 'Company'
+        }
+      });
+    } finally {
+      setAgentLoading(false);
     }
   };
 
@@ -124,56 +202,127 @@ export default function TenantSettingsPage() {
 
       {/* Profile Tab */}
       {activeTab === 'profile' && tenant && (
-        <Card className="p-6 bg-surface border-border">
-          <h2 className="text-lg font-semibold mb-4 text-text">Profile Information</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Tenant ID</label>
-              <input
-                type="text"
-                value={tenant.id}
-                disabled
-                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text"
-              />
+        <div className="space-y-6">
+          {/* AI Agent Configuration Card */}
+          <Card className="p-6 bg-surface border-border">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Brain className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-text">AI Agent Assignment</h2>
+                <p className="text-sm text-text-secondary">Your assigned AI agent configuration</p>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Organization Name</label>
-              <input
-                type="text"
-                value={tenant.name}
-                disabled
-                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text"
-              />
+
+            {agentLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : agentConfig ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4 p-4 bg-background rounded-lg border border-border">
+                  <div className="text-2xl">
+                    {(AGENT_TYPE_INFO as any)[agentConfig.agent_type]?.icon || DEFAULT_AGENT_INFO.icon}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-text">
+                        {(AGENT_TYPE_INFO as any)[agentConfig.agent_type]?.label || agentConfig.agent_type}
+                      </h3>
+                      <div className={`w-3 h-3 rounded-full ${(AGENT_TYPE_INFO as any)[agentConfig.agent_type]?.color || DEFAULT_AGENT_INFO.color}`} />
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${agentConfig.enabled
+                        ? 'bg-success/20 text-success'
+                        : 'bg-text-secondary/20 text-text-secondary'
+                        }`}>
+                        {agentConfig.enabled ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-text-secondary">
+                      {(AGENT_TYPE_INFO as any)[agentConfig.agent_type]?.description || 'Custom configured agent'}
+                    </p>
+                  </div>
+                </div>
+
+                {agentConfig.enabled && agentConfig.allowed_tools.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-text mb-2">Available Tools:</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {agentConfig.allowed_tools.map((tool) => (
+                        <span key={tool} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-md">
+                          {tool}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-xs text-text-secondary">
+                  <p>• Agent configuration is managed by your system administrator</p>
+                  <p>• Contact support if you need different agent capabilities</p>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Brain className="w-12 h-12 text-text-secondary mx-auto mb-3" />
+                <p className="text-text-secondary">No AI agent assigned</p>
+                <p className="text-sm text-text-secondary mt-1">Contact your administrator to configure an AI agent</p>
+              </div>
+            )}
+          </Card>
+
+          {/* Profile Information Card */}
+          <Card className="p-6 bg-surface border-border">
+            <h2 className="text-lg font-semibold mb-4 text-text">Profile Information</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Tenant ID</label>
+                <input
+                  type="text"
+                  value={tenant.id}
+                  disabled
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Organization Name</label>
+                <input
+                  type="text"
+                  value={tenant.name}
+                  disabled
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Email</label>
+                <input
+                  type="email"
+                  value={tenant.email}
+                  disabled
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Phone</label>
+                <input
+                  type="text"
+                  value={tenant.phone || 'Not provided'}
+                  disabled
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Member Since</label>
+                <input
+                  type="text"
+                  value={formatDate(tenant.created_at)}
+                  disabled
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Email</label>
-              <input
-                type="email"
-                value={tenant.email}
-                disabled
-                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Phone</label>
-              <input
-                type="text"
-                value={tenant.phone || 'Not provided'}
-                disabled
-                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Member Since</label>
-              <input
-                type="text"
-                value={formatDate(tenant.created_at)}
-                disabled
-                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text"
-              />
-            </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
       )}
 
       {/* Usage & Quotas Tab */}
@@ -334,25 +483,7 @@ export default function TenantSettingsPage() {
 
       {/* Billing Tab */}
       {activeTab === 'billing' && tenant && (
-        <Card className="p-6 bg-surface border-border">
-          <h2 className="text-lg font-semibold mb-4 text-text">Billing Information</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Current Plan</label>
-              <div className="px-3 py-2 border border-border rounded-lg bg-background capitalize text-text">
-                {tenant.billing_tier}
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Billing Status</label>
-              <div className={`px-3 py-2 border rounded-lg capitalize ${tenant.billing_status === 'active' ? 'bg-success/10 text-success border-success/20' : 'bg-error/10 text-error border-error/20'
-                }`}>
-                {tenant.billing_status}
-              </div>
-            </div>
-            <Button>Upgrade Plan</Button>
-          </div>
-        </Card>
+        <PricingGrid currentTier={tenant.billing_tier} />
       )}
 
       {/* Notifications Tab */}

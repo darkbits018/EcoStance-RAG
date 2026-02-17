@@ -83,6 +83,9 @@ async def process_and_upload_file_multilingual(
         raw_blocks, extraction_metadata = await extract_data_from_file(file_path)
         update_progress(f"Step 1/6: Extraction complete. Found {len(raw_blocks)} blocks.")
         
+        if not raw_blocks:
+            raise ValueError(f"No data could be extracted from {os.path.basename(file_path)}. The file might be corrupted, empty, or using an unsupported internal format.")
+
         # 2. Enhanced Cleaning Stage
         update_progress("Step 2/6: Starting multilingual cleaning and enrichment...")
         enriched_blocks = clean_and_enrich_blocks_with_fallback(raw_blocks, tenant_id)
@@ -91,7 +94,10 @@ async def process_and_upload_file_multilingual(
         lang_stats = get_language_statistics(enriched_blocks)
         update_progress(f"Step 2/6: Cleaning complete. {len(enriched_blocks)} blocks remain.")
         update_progress(f"Language distribution: {lang_stats['languages']}")
-        
+
+        if not enriched_blocks:
+            raise ValueError(f"Cleaning phase removed all content from {os.path.basename(file_path)}. This happens if the file contains only boilerplate/empty text.")
+
         if lang_stats['multilingual_blocks'] > 0:
             update_progress(f"Found {lang_stats['multilingual_blocks']} multilingual blocks")
         
@@ -100,6 +106,9 @@ async def process_and_upload_file_multilingual(
         final_chunks = chunk_blocks(enriched_blocks)
         update_progress(f"Step 3/6: Chunking complete. Generated {len(final_chunks)} chunks.")
         
+        if not final_chunks:
+            raise ValueError(f"Chunking phase resulted in 0 chunks for {os.path.basename(file_path)}.")
+
         # 4. Multilingual Embedding Stage
         update_progress("Step 4/6: Starting multilingual embedding generation (BGE-M3)...")
         model_info = get_multilingual_model_info()

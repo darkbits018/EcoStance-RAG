@@ -148,6 +148,10 @@ def upload_to_qdrant(
         vector = chunk["embedding"]
         points_to_upload.append(models.PointStruct(id=point_id, vector=vector, payload=payload))
 
+    if not points_to_upload:
+        logger.warning(f"No points to upload for collection '{collection_name}'")
+        return
+
     client.upsert(
         collection_name=collection_name,
         points=points_to_upload,

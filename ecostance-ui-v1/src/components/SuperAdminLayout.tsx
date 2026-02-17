@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -14,10 +14,13 @@ import {
   Menu,
   X,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext.v2';
+import { TrialBanner } from './TrialBanner';
 
 export default function SuperAdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
@@ -32,8 +35,8 @@ export default function SuperAdminLayout() {
     { name: 'Settings', href: '/admin/settings', icon: Settings },
   ];
 
-  const handleLogout = () => {
-    localStorage.clear();
+  const handleLogout = async () => {
+    await logout();
     navigate('/admin/login');
   };
 
@@ -43,9 +46,8 @@ export default function SuperAdminLayout() {
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white transform transition-transform duration-200 ease-in-out ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white transform transition-transform duration-200 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-800">
           <h1 className="text-xl font-bold">Super Admin</h1>
@@ -65,11 +67,10 @@ export default function SuperAdminLayout() {
               <Link
                 key={item.name}
                 to={item.href}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                  active
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                }`}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${active
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                  }`}
               >
                 <Icon className="w-5 h-5" />
                 <span className="font-medium">{item.name}</span>
@@ -121,6 +122,8 @@ export default function SuperAdminLayout() {
             </div>
           </div>
         </div>
+
+        <TrialBanner />
 
         {/* Page Content */}
         <main className="min-h-[calc(100vh-4rem)]">

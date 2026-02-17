@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { tenantUsersAPI, tenantRolesAPI } from '../../services/api';
 import { Card } from '../ui/Card';
@@ -9,7 +8,6 @@ interface Role {
     id: string;
     name: string;
     description?: string;
-    permissions: string[];
 }
 
 interface User {
@@ -62,7 +60,6 @@ export default function UserManagement() {
                     usersArray = (data as any).data;
                 }
             }
-
             setUsers(usersArray);
         } catch (err: any) {
             console.error('❌ Failed to load users:', err);
@@ -197,9 +194,6 @@ export default function UserManagement() {
 
     const openEditModal = (user: User) => {
         setEditingUser(user);
-        // Find absolute primary role or first role
-        const currentRoleId = user.roles && user.roles.length > 0 ? user.roles[0].id : '';
-
         setFormData({
             emails: user.email, // Use this field for display in edit (read-only)
             full_name: user.full_name || '',

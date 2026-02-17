@@ -4,6 +4,8 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Label } from '../../components/ui/Label';
 import { Card } from '../../components/ui/Card';
+import { setAccessToken } from '../../services/api';
+import { useAuth } from '../../context/AuthContext.v2';
 
 export default function SuperAdminLoginPage() {
   const [email, setEmail] = useState('');
@@ -12,6 +14,7 @@ export default function SuperAdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { updateUser } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,23 +44,22 @@ export default function SuperAdminLoginPage() {
         throw new Error(`Access denied. Super admin privileges required. Tenant: ${data.tenant_id}`);
       }
 
-      // Store tokens and user info
-      localStorage.setItem('access_token', data.access_token);
-      if (data.refresh_token) {
-        localStorage.setItem('refresh_token', data.refresh_token);
-      }
-      
-      // Create user object from response data
-      const user = {
+      // Store tokens via helper (syncs with localStorage)
+      setAccessToken(data.access_token, data.expires_in);
+
+      // Create user object for both AuthContext and localStorage
+      const userData = {
         id: data.user_id,
         email: data.email,
-        role: 'super_admin', // Set role based on tenant_id check
-        tenant_id: data.tenant_id,
+        role: 'super_admin',
+        tenantId: data.tenant_id,
+        tenant_id: data.tenant_id, // snake_case for legacy compatibility
         name: data.name || 'Super Admin',
       };
-      
-      localStorage.setItem('user', JSON.stringify(user));
-      
+
+      // Update centralized auth state
+      updateUser(userData);
+
       if (rememberMe) {
         localStorage.setItem('remember_me', 'true');
       }

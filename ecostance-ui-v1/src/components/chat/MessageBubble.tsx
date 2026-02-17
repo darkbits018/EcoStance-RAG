@@ -2,6 +2,12 @@ import React from 'react';
 import { Icons } from '../icons';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
+import {
+  CertificateCard,
+  ProductGallery,
+  ImpactStats,
+  UrlAction
+} from './components';
 
 export interface Source {
   filename: string;
@@ -14,9 +20,10 @@ export interface Source {
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
-  content: string;
+  content: any; // Changed from string to any to support objects
   timestamp: Date;
   sources?: Source[];
+  agent_type?: string;
 }
 
 interface MessageBubbleProps {
@@ -34,7 +41,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const [copied, setCopied] = React.useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(message.content);
+    const textToCopy = typeof message.content === 'object'
+      ? JSON.stringify(message.content, null, 2)
+      : message.content;
+    navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
     onCopy?.();
@@ -42,22 +52,82 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   const isUser = message.role === 'user';
 
+  const renderContent = () => {
+    let content = message.content;
+
+    // Attempt to parse string content if it looks like JSON
+    if (typeof content === 'string' && content.trim().startsWith('{')) {
+      try {
+        content = JSON.parse(content);
+      } catch (e) {
+        // Not valid JSON, keep as string
+      }
+    }
+
+    if (typeof content === 'object' && content !== null) {
+      const type = content.type || content.component;
+
+      switch (type) {
+        case 'certificate_card':
+          return (
+            <CertificateCard
+              project={content.project || 'Unknown Project'}
+              status={content.status || 'Pending'}
+              date={content.date || 'N/A'}
+              tonnage={content.tonnage || 0}
+            />
+          );
+        case 'product_gallery':
+        case 'product_list':
+          return <ProductGallery products={content.products || []} />;
+        case 'impact_stats':
+          return (
+            <ImpactStats
+              contribution={content.contribution || 0}
+              trees_equivalent={content.trees_equivalent || 0}
+              rank={content.rank || 'Novice'}
+            />
+          );
+        case 'url_action':
+          return (
+            <UrlAction
+              label={content.label || 'Learn More'}
+              url={content.url || '#'}
+              type={content.action_type || 'primary'}
+            />
+          );
+        default:
+          // If it's an object but types don't match, stringify it
+          return <pre className="text-xs overflow-x-auto">{JSON.stringify(content, null, 2)}</pre>;
+      }
+    }
+
+    return <p className="text-sm whitespace-pre-wrap">{content}</p>;
+  };
+
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
-      <div className={`max-w-[80%] ${isUser ? 'order-2' : 'order-1'}`}>
+      <div className={`max-w-[85%] ${isUser ? 'order-2' : 'order-1'}`}>
+        {!isUser && (
+          <div className="flex items-center gap-1.5 mb-1.5 ml-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+            <span className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">
+              {message.agent_type?.replace(/_/g, ' ') || 'AI Assistant'}
+            </span>
+          </div>
+        )}
         {/* Message bubble */}
         <div
-          className={`rounded-lg px-4 py-3 ${
-            isUser
-              ? 'bg-primary text-white'
-              : 'bg-surface border border-border text-text'
-          }`}
+          className={`rounded-lg px-4 py-3 ${isUser
+            ? 'bg-primary text-white shadow-md'
+            : 'bg-surface border border-border text-text shadow-sm hover:shadow-md transition-shadow'
+            }`}
         >
-          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+          {renderContent()}
         </div>
 
         {/* Timestamp */}
-        <div className={`text-xs text-text-secondary mt-1 ${isUser ? 'text-right' : 'text-left'}`}>
+        <div className={`text-[10px] text-text-secondary mt-1 opacity-70 ${isUser ? 'text-right' : 'text-left'}`}>
           {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </div>
 

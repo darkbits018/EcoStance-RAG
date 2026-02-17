@@ -4,20 +4,26 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import CreateTenantModal from '../../components/modals/CreateTenantModal';
-import { Search, Plus, MoreVertical } from 'lucide-react';
-import { adminAPI, tenantsAPI } from '../../services/api';
+import AgentAssignmentModal from '../../components/modals/AgentAssignmentModal';
+import ManageTenantModal from '../../components/modals/ManageTenantModal';
+import { Search, Plus, Brain, Settings } from 'lucide-react';
+import { Badge } from '../../components/ui/Badge';
+import { adminAPI, tenantsAPI, publicAgentAPI } from '../../services/api';
 
 interface Tenant {
   id: string;
   name: string;
   company: string;
   status: 'active' | 'suspended' | 'inactive';
-  tier: 'free' | 'pro' | 'enterprise';
+  tier: 'free' | 'starter' | 'professional' | 'pro' | 'enterprise';
   user_count: number;
   kb_count: number;
   storage_gb: number;
   queries_30d: number;
+  email: string;
   created_at: string;
+  agent_type?: string;
+  agent_enabled?: boolean;
 }
 
 export default function TenantManagementPage() {
@@ -28,6 +34,9 @@ export default function TenantManagementPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
+  const [showAgentModal, setShowAgentModal] = useState(false);
+  const [showManageModal, setShowManageModal] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -45,10 +54,9 @@ export default function TenantManagementPage() {
       } else {
         data = await tenantsAPI.listTenants(0, 100);
       }
-      
+
       console.log('Raw tenant data received:', data);
-      console.log('First tenant sample (full):', JSON.stringify(data[0], null, 2));
-      
+
       // Handle different response formats and map backend fields to frontend interface
       let rawTenants: any[] = [];
       if (Array.isArray(data)) {
@@ -57,25 +65,25 @@ export default function TenantManagementPage() {
         rawTenants = data.tenants;
       } else if (data.data && Array.isArray(data.data)) {
         rawTenants = data.data;
-      } else {
-        console.error('Unexpected response format:', data);
-        console.error('Cannot extract tenant list from response');
       }
-      
+
       // Map backend fields to frontend Tenant interface
       const tenantList: Tenant[] = rawTenants.map((t: any) => ({
         id: t.id,
         name: t.name,
-        company: t.company || t.name, // Use name as fallback for company
-        status: t.is_active ? 'active' : 'inactive', // Map is_active to status
-        tier: t.billing_tier || 'free', // Map billing_tier to tier
+        company: t.company || t.name,
+        status: t.status || (t.is_active ? 'active' : 'inactive'),
+        tier: t.billing_tier || 'free',
         user_count: t.user_count || 0,
         kb_count: t.kb_count || 0,
         storage_gb: t.storage_gb || 0,
         queries_30d: t.queries_30d || 0,
+        email: t.email || '',
         created_at: t.created_at,
+        agent_type: t.agent_type || t.public_agent_type || t.agent_config?.agent_type || (typeof t.agent_config === 'string' ? t.agent_config : null) || 'generic',
+        agent_enabled: t.agent_enabled ?? t.is_agent_enabled ?? t.agent_config?.enabled ?? (t.agent_config ? true : false),
       }));
-      
+
       console.log('Tenant list length:', tenantList.length);
       console.log('First mapped tenant:', tenantList[0]);
 
@@ -89,6 +97,28 @@ export default function TenantManagementPage() {
       }
 
       setTenants(filteredTenants);
+
+      // Background fetch agent configs for each tenant to ensure accurate display
+      // since the list endpoint might not include full agent details
+      Promise.all(filteredTenants.map(async (tenant) => {
+        try {
+          const config = await publicAgentAPI.superAdmin.getTenantAgentConfig(tenant.id) as any;
+          if (config) {
+            setTenants(prev => prev.map(t =>
+              t.id === tenant.id
+                ? {
+                  ...t,
+                  agent_type: config.agent_type || config.config?.agent_type || t.agent_type,
+                  agent_enabled: config.enabled ?? config.config?.enabled ?? t.agent_enabled
+                }
+                : t
+            ));
+          }
+        } catch (err) {
+          // Ignore individual fetch errors
+          console.debug(`Could not fetch agent config for tenant ${tenant.id}`);
+        }
+      }));
     } catch (error: any) {
       console.error('Failed to fetch tenants:', error);
       setError(error.message || 'Failed to load tenants. Please check if the backend server is running.');
@@ -115,6 +145,8 @@ export default function TenantManagementPage() {
   const getTierBadge = (tier: string) => {
     const colors: Record<string, string> = {
       free: 'bg-text-secondary/20 text-text-secondary',
+      starter: 'bg-emerald-500/20 text-emerald-500',
+      professional: 'bg-secondary/20 text-secondary',
       pro: 'bg-secondary/20 text-secondary',
       enterprise: 'bg-primary/20 text-primary',
     };
@@ -124,6 +156,29 @@ export default function TenantManagementPage() {
         {safeTier.toUpperCase()}
       </span>
     );
+  };
+
+  const handleQuickAgentAssign = async (tenantId: string, agentType: string) => {
+    try {
+      await publicAgentAPI.superAdmin.updateTenantAgentConfig(tenantId, {
+        agent_type: agentType as any,
+        enabled: true,
+        allowed_tools: [],
+        branding: {
+          primary_color: '#0066CC',
+          company_name: 'Company'
+        }
+      });
+      // Refresh tenant list to show updated status
+      fetchTenants();
+    } catch (error) {
+      console.error('Failed to assign agent:', error);
+    }
+  };
+
+  const handleOpenAgentModal = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setShowAgentModal(true);
   };
 
   return (
@@ -144,6 +199,30 @@ export default function TenantManagementPage() {
         onClose={() => setShowCreateModal(false)}
         onSuccess={fetchTenants}
       />
+
+      {selectedTenant && (
+        <>
+          <AgentAssignmentModal
+            isOpen={showAgentModal}
+            onClose={() => {
+              setShowAgentModal(false);
+              setSelectedTenant(null);
+            }}
+            tenantName={selectedTenant.name}
+            tenantId={selectedTenant.id}
+            onAssign={handleQuickAgentAssign}
+          />
+          <ManageTenantModal
+            isOpen={showManageModal}
+            onClose={() => {
+              setShowManageModal(false);
+              setSelectedTenant(null);
+            }}
+            tenant={selectedTenant}
+            onUpdate={fetchTenants}
+          />
+        </>
+      )}
 
       {/* Error Message */}
       {error && (
@@ -199,7 +278,8 @@ export default function TenantManagementPage() {
           >
             <option value="all">All Tiers</option>
             <option value="free">Free</option>
-            <option value="pro">Pro</option>
+            <option value="starter">Starter</option>
+            <option value="professional">Professional</option>
             <option value="enterprise">Enterprise</option>
           </select>
         </div>
@@ -214,10 +294,10 @@ export default function TenantManagementPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Tenant</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Tier</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">AI Agent</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Users</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">KBs</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Storage</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Queries (30d)</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Created</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase">Actions</th>
               </tr>
@@ -235,8 +315,8 @@ export default function TenantManagementPage() {
                     <div className="text-text-secondary">
                       <p className="mb-2">No tenants found</p>
                       <p className="text-sm">
-                        {!Array.isArray(tenants) 
-                          ? 'API endpoint may not be configured correctly' 
+                        {!Array.isArray(tenants)
+                          ? 'API endpoint may not be configured correctly'
                           : 'Create your first tenant to get started'}
                       </p>
                     </div>
@@ -258,17 +338,46 @@ export default function TenantManagementPage() {
                     </td>
                     <td className="px-6 py-4">{getStatusBadge(tenant.status)}</td>
                     <td className="px-6 py-4">{getTierBadge(tenant.tier)}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={tenant.agent_enabled ? "success" : "secondary"} className="w-fit text-[10px] uppercase">
+                          {tenant.agent_type || 'generic'}
+                        </Badge>
+                        <span className="text-[10px] text-text-secondary">
+                          {tenant.agent_enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-sm text-text">{tenant.user_count}</td>
                     <td className="px-6 py-4 text-sm text-text">{tenant.kb_count}</td>
                     <td className="px-6 py-4 text-sm text-text">{tenant.storage_gb.toFixed(2)} GB</td>
-                    <td className="px-6 py-4 text-sm text-text">{tenant.queries_30d.toLocaleString()}</td>
                     <td className="px-6 py-4 text-sm text-text-secondary">
                       {new Date(tenant.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4">
-                      <button className="text-text-secondary hover:text-primary transition-colors">
-                        <MoreVertical className="w-5 h-5" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedTenant(tenant);
+                            setShowManageModal(true);
+                          }}
+                          className="text-primary hover:bg-primary/10"
+                        >
+                          <Settings className="w-4 h-4 mr-1" />
+                          Manage
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenAgentModal(tenant)}
+                          className="text-secondary hover:bg-secondary/10"
+                        >
+                          <Brain className="w-4 h-4 mr-1" />
+                          Agent
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))

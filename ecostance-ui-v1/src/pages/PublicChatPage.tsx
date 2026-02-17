@@ -25,7 +25,16 @@ interface PublicChatConfig {
     allow_feedback: boolean;
     show_suggested_questions: boolean;
   };
+  agent_type: string;
 }
+
+const PERSONA_CONFIG: Record<string, { label: string; icon: any; iconLabel: string }> = {
+  security_analyst: { label: 'SOC Assistant', icon: Icons.Shield || Icons.Activity, iconLabel: '🛡️' },
+  quickship: { label: 'Logistics Support', icon: Icons.Truck || Icons.Package, iconLabel: '📦' },
+  ecommerce: { label: 'Shopping Assistant', icon: Icons.ShoppingCart || Icons.Star, iconLabel: '🛍️' },
+  ecostance: { label: 'Sustainability Expert', icon: Icons.Leaf, iconLabel: '🍃' },
+  generic: { label: 'AI Assistant', icon: Icons.Sparkles || Icons.MessageSquare, iconLabel: '✨' },
+};
 
 const PublicChatPage: React.FC = () => {
   const [config, setConfig] = useState<PublicChatConfig | null>(null);
@@ -49,15 +58,16 @@ const PublicChatPage: React.FC = () => {
         console.log('[PublicChatPage] Config keys:', data ? Object.keys(data) : 'null');
         console.log('[PublicChatPage] Config.enabled:', data?.enabled);
         console.log('[PublicChatPage] Config.branding:', data?.branding);
-        
+
         setConfig(data);
-        
+
         if (data.enabled && data.welcome_message) {
           const welcomeMessage: Message = {
             id: 'welcome',
             role: 'assistant',
             content: data.welcome_message,
             timestamp: new Date(),
+            agent_type: data.agent_type,
           };
           setMessages([welcomeMessage]);
         }
@@ -77,28 +87,28 @@ const PublicChatPage: React.FC = () => {
   // Rate limiting check
   const checkRateLimit = (): boolean => {
     if (!config) return false;
-    
+
     const now = Date.now();
     const oneMinuteAgo = now - 60000;
-    
+
     if (lastQueryTime < oneMinuteAgo) {
       setQueriesInLastMinute(0);
     }
-    
+
     if (queriesInLastMinute >= config.rate_limit.queries_per_minute) {
       return false;
     }
-    
+
     if (messageCount >= config.rate_limit.max_messages_per_session) {
       return false;
     }
-    
+
     return true;
   };
 
   const handleSendMessage = async (content: string) => {
     if (!config) return;
-    
+
     if (!checkRateLimit()) {
       const errorMessage: Message = {
         id: `msg-${Date.now()}-rate-limit`,
@@ -143,6 +153,7 @@ const PublicChatPage: React.FC = () => {
         role: 'assistant',
         content: response.answer,
         timestamp: new Date(),
+        agent_type: response.agent_type || config.agent_type,
         sources: config.features.show_sources && response.sources ? response.sources.map((src: any) => ({
           filename: src.filename || src.source,
           chunkNumber: src.chunk_number,
@@ -177,6 +188,7 @@ const PublicChatPage: React.FC = () => {
       role: 'assistant',
       content: config.welcome_message,
       timestamp: new Date(),
+      agent_type: config.agent_type,
     }]);
     setMessageCount(0);
   };
@@ -236,20 +248,20 @@ const PublicChatPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <div 
+      <div
         className="bg-surface border-b border-border px-6 py-4 shadow-sm"
         style={{ borderBottomColor: config.branding.primary_color + '20' }}
       >
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
             {config.branding.logo_url ? (
-              <img 
-                src={config.branding.logo_url} 
+              <img
+                src={config.branding.logo_url}
                 alt={config.branding.company_name}
                 className="h-8 w-auto"
               />
             ) : (
-              <div 
+              <div
                 className="h-8 w-8 rounded flex items-center justify-center text-white font-bold text-sm"
                 style={{ backgroundColor: config.branding.primary_color }}
               >
@@ -257,10 +269,17 @@ const PublicChatPage: React.FC = () => {
               </div>
             )}
             <div>
-              <h1 className="text-xl font-semibold text-text">
-                {config.branding.company_name} Support
+              <h1 className="text-xl font-semibold text-text flex items-center gap-2">
+                {config.branding.company_name}
+                {(() => {
+                  const persona = PERSONA_CONFIG[config.agent_type] || PERSONA_CONFIG.generic;
+                  const Icon = persona.icon;
+                  return <Icon className="h-5 w-5 text-primary" />;
+                })()}
               </h1>
-              <p className="text-sm text-text-secondary">Get instant help</p>
+              <p className="text-sm text-text-secondary">
+                {PERSONA_CONFIG[config.agent_type]?.label || 'AI Assistant'}
+              </p>
             </div>
           </div>
           <Button
@@ -317,7 +336,7 @@ const PublicChatPage: React.FC = () => {
       <div className="bg-surface border-t border-border px-6 py-3">
         <div className="max-w-4xl mx-auto text-center">
           <p className="text-xs text-text-secondary">
-            Powered by {config.branding.company_name} AI • 
+            Powered by {config.branding.company_name} {PERSONA_CONFIG[config.agent_type]?.label || 'AI Assistant'} •
             {messageCount}/{config.rate_limit.max_messages_per_session} messages used
           </p>
         </div>

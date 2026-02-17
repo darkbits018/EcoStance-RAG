@@ -21,35 +21,44 @@ const SignupPage: React.FC = () => {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    alert('Signup handler triggered!');
+    console.log('📝 Signup form submitted');
     setIsLoading(true);
     setError(null);
-    
+
     // Validate passwords match
     if (password !== confirmPassword) {
+      console.log('❌ Passwords do not match');
       setError('Passwords do not match');
       setIsLoading(false);
       return;
     }
-    
+
     // Validate password strength
     if (password.length < 8) {
       setError('Password must be at least 8 characters long');
       setIsLoading(false);
       return;
     }
-    
+
     try {
-      // Register tenant with all required fields including password
-      await tenantsAPI.register({
+      console.log('📡 Registration Payload:');
+      console.table({ name, email, billingTier });
+
+      const result = await tenantsAPI.register({
         name,
         email,
         phone: phone || undefined,
         billing_tier: billingTier,
         password,
       });
-      
-      // If registration is successful, navigate to login page
-      navigate('/login');
+
+      console.log('✅ Registration successfully completed:', result);
+
+      // Slight delay to allow the user to see the success log before navigation
+      setTimeout(() => {
+        navigate('/login');
+      }, 100);
     } catch (error: unknown) {
       console.error("Signup failed:", error);
       const errorMessage = error instanceof Error ? error.message : 'Registration failed. Please try again.';
@@ -72,7 +81,7 @@ const SignupPage: React.FC = () => {
               <span className="block sm:inline">{error}</span>
             </div>
           )}
-          
+
           <div>
             <Label htmlFor="name">Organization Name</Label>
             <Input
@@ -85,7 +94,7 @@ const SignupPage: React.FC = () => {
               disabled={isLoading}
             />
           </div>
-          
+
           <div>
             <Label htmlFor="email">Email Address</Label>
             <Input
@@ -98,7 +107,7 @@ const SignupPage: React.FC = () => {
               disabled={isLoading}
             />
           </div>
-          
+
           <div>
             <Label htmlFor="password">Password</Label>
             <div className="relative">
@@ -128,7 +137,7 @@ const SignupPage: React.FC = () => {
               Must be at least 8 characters long
             </p>
           </div>
-          
+
           <div>
             <Label htmlFor="confirmPassword">Confirm Password</Label>
             <div className="relative">
@@ -155,7 +164,7 @@ const SignupPage: React.FC = () => {
               </button>
             </div>
           </div>
-          
+
           <div>
             <Label htmlFor="phone">Phone Number (Optional)</Label>
             <Input
@@ -167,7 +176,7 @@ const SignupPage: React.FC = () => {
               disabled={isLoading}
             />
           </div>
-          
+
           <div>
             <Label htmlFor="billingTier">Billing Tier</Label>
             <select
@@ -183,7 +192,7 @@ const SignupPage: React.FC = () => {
               <option value="enterprise">Enterprise (1TB, 100K queries/day)</option>
             </select>
           </div>
-          
+
           <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? (
               <>
@@ -197,9 +206,9 @@ const SignupPage: React.FC = () => {
         </form>
         <div className="text-center text-sm text-text-secondary">
           Already have an account?{' '}
-          <button 
+          <button
             type="button"
-            onClick={() => navigate('/login')} 
+            onClick={() => navigate('/login')}
             className="text-primary hover:underline font-medium"
           >
             Log In

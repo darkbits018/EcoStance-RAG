@@ -46,7 +46,7 @@ class TenantQuota(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    tenant = relationship("Tenant")
+    tenant = relationship("Tenant", back_populates="quotas")
     
     def __repr__(self):
         return f"<TenantQuota(tenant_id={self.tenant_id}, storage={self.storage_used}/{self.storage_limit})>"

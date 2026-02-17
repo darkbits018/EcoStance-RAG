@@ -1,15 +1,49 @@
 import { useState, useEffect, useRef } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Brain, Database, FileText, Send, Loader2, AlertCircle, X, RefreshCw } from 'lucide-react';
+import { Database, FileText, Send, Loader2, AlertCircle, X, RefreshCw, Shield, Truck, ShoppingCart, Leaf, Sparkles } from 'lucide-react';
 import { databaseAPI, knowledgeBaseAPI, agentAPI } from '../services/api';
 import type { AgentChatResponse } from '../services/api.types';
 import { useAuth } from '../context/AuthContext.v2';
 
+const PERSONA_CONFIG: Record<string, { label: string; icon: any; description: string }> = {
+  security_analyst: {
+    label: 'SOC Assistant',
+    icon: Shield,
+    description: 'Expert in log discovery, security events, and threat analysis'
+  },
+  quickship: {
+    label: 'Logistics Support',
+    icon: Truck,
+    description: 'Specialized in shipment tracking, logistics, and supply chain'
+  },
+  ecommerce: {
+    label: 'Shopping Assistant',
+    icon: ShoppingCart,
+    description: 'Expert in product discovery and e-commerce support'
+  },
+  ecostance: {
+    label: 'Sustainability Expert',
+    icon: Leaf,
+    description: 'Focused on environmental impact and carbon offsets'
+  },
+  generic: {
+    label: 'AI Assistant',
+    icon: Sparkles,
+    description: 'General-purpose AI assistant with access to your data'
+  }
+};
+import {
+  CertificateCard,
+  ProductGallery,
+  ImpactStats,
+  UrlAction
+} from '../components/chat/components';
+
 interface Message {
   id: string;
   type: 'user' | 'assistant' | 'system';
-  content: string;
+  content: any; // Changed from string to any
   timestamp: Date;
   source?: 'database' | 'knowledge-base';
   isError?: boolean;
@@ -22,6 +56,7 @@ interface Message {
       relevance_score: number;
     }>;
   };
+  agent_type?: string;
 }
 
 interface KnowledgeBase {
@@ -48,12 +83,13 @@ export default function AIAgentPage() {
   const [selectedKB, setSelectedKB] = useState<string>('');
   const [selectedDBConnection, setSelectedDBConnection] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
+
   // Connection management state
   const [showDBModal, setShowDBModal] = useState(false);
   const [showKBModal, setShowKBModal] = useState(false);
   const [dbConnections, setDbConnections] = useState<DatabaseConnection[]>([]);
   const [connectionLoading, setConnectionLoading] = useState(false);
+  const [agentConfig, setAgentConfig] = useState<{ agent_type: string; is_customized: boolean } | null>(null);
 
   useEffect(() => {
     // Clear state when tenant changes
@@ -63,14 +99,61 @@ export default function AIAgentPage() {
     setSelectedDBConnection('');
     setIsDatabaseConnected(false);
     setMessages([]);
-    
+    setAgentConfig(null);
+    setSessionId(null);
+
     // Load fresh data for the current tenant
     if (user?.tenantId) {
       loadKnowledgeBases();
       checkDatabaseConnection();
       loadDatabaseConnections();
+      fetchAgentConfig();
+
+      // Restore session if exists
+      const savedSessionId = localStorage.getItem(`ai_agent_session_${user.tenantId}`);
+      if (savedSessionId) {
+        console.log('AI Agent: Found saved session:', savedSessionId);
+        setSessionId(savedSessionId);
+        loadSessionHistory(savedSessionId);
+      }
     }
   }, [user?.tenantId]); // Reload when tenant changes
+
+  const loadSessionHistory = async (sid: string) => {
+    try {
+      setLoading(true);
+      const history = await agentAPI.getHistory(sid) as any;
+      if (history && history.messages && Array.isArray(history.messages)) {
+        console.log('AI Agent: Loaded history:', history.messages.length, 'messages');
+        const mappedMessages: Message[] = history.messages.map((msg: any, index: number) => ({
+          id: `hist-${index}-${Date.now()}`,
+          type: msg.role,
+          content: msg.content,
+          timestamp: new Date(msg.timestamp),
+          agent_type: msg.agent_type // Assuming backend stores/returns this, otherwise undefined (generic)
+        }));
+        setMessages(mappedMessages);
+      }
+    } catch (err) {
+      console.error('AI Agent: Failed to load session history:', err);
+      // If session is invalid, clear it
+      if (user?.tenantId) {
+        localStorage.removeItem(`ai_agent_session_${user.tenantId}`);
+      }
+      setSessionId(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAgentConfig = async () => {
+    try {
+      const config = await agentAPI.getConfig() as any;
+      setAgentConfig(config);
+    } catch (err) {
+      console.error('Failed to fetch agent config:', err);
+    }
+  };
 
   useEffect(() => {
     scrollToBottom();
@@ -85,9 +168,9 @@ export default function AIAgentPage() {
       console.log('AI Agent: Loading knowledge bases...');
       const data = await knowledgeBaseAPI.list() as any;
       console.log('AI Agent: KB API response:', data);
-      
+
       let kbList: KnowledgeBase[] = [];
-      
+
       if (Array.isArray(data)) {
         kbList = data.map((name: string) => ({
           name: name,
@@ -99,7 +182,7 @@ export default function AIAgentPage() {
       } else if (data && Array.isArray(data.data)) {
         kbList = data.data;
       }
-      
+
       setAvailableKBs(kbList);
       console.log('AI Agent: Loaded', kbList.length, 'knowledge bases');
     } catch (err) {
@@ -111,7 +194,7 @@ export default function AIAgentPage() {
   const handleSelectKB = (kbName: string) => {
     setSelectedKB(kbName);
     setShowKBModal(false);
-    
+
     const successMsg: Message = {
       id: Date.now().toString(),
       type: 'system',
@@ -146,7 +229,7 @@ export default function AIAgentPage() {
     setConnectionLoading(true);
     try {
       const conn = await databaseAPI.loadConnection(connectionName) as any;
-      
+
       let dbUri: string;
       if (conn.db_uri) {
         dbUri = conn.db_uri;
@@ -155,13 +238,13 @@ export default function AIAgentPage() {
       } else {
         dbUri = `${conn.type}://${conn.username}:${conn.password}@${conn.host}:${conn.port}/${conn.database}`;
       }
-      
+
       console.log('AI Agent: Connecting with URI:', dbUri.replace(/:[^:@]+@/, ':****@'));
       await databaseAPI.connect(dbUri);
       setIsDatabaseConnected(true);
       setSelectedDBConnection(connectionName);
       setShowDBModal(false);
-      
+
       const successMsg: Message = {
         id: Date.now().toString(),
         type: 'system',
@@ -187,7 +270,7 @@ export default function AIAgentPage() {
     if (!input.trim() || loading) return;
 
     const questionText = input.trim();
-    
+
     const userMessage: Message = {
       id: Date.now().toString(),
       type: 'user',
@@ -205,23 +288,27 @@ export default function AIAgentPage() {
     try {
       // Use the new AI Agent Beta API with KB and DB connection
       const response = await agentAPI.chat(
-        questionText, 
+        questionText,
         sessionId || undefined,
         selectedKB || undefined,
         selectedDBConnection || undefined
       ) as AgentChatResponse;
-      
+
       // Update session ID if new
       if (response.session_id && response.session_id !== sessionId) {
         setSessionId(response.session_id);
         console.log('AI Agent: New session ID:', response.session_id);
+        if (user?.tenantId) {
+          localStorage.setItem(`ai_agent_session_${user.tenantId}`, response.session_id);
+        }
       }
-      
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
         content: response.response,
         timestamp: new Date(response.timestamp),
+        agent_type: response.agent_type || agentConfig?.agent_type,
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -242,12 +329,15 @@ export default function AIAgentPage() {
 
   const handleReset = async () => {
     if (!sessionId) return;
-    
+
     if (window.confirm('Are you sure you want to reset the conversation?')) {
       try {
         await agentAPI.reset(sessionId);
         setMessages([]);
         setSessionId(null);
+        if (user?.tenantId) {
+          localStorage.removeItem(`ai_agent_session_${user.tenantId}`);
+        }
       } catch (err) {
         console.error('Failed to reset conversation:', err);
       }
@@ -318,11 +408,10 @@ export default function AIAgentPage() {
                     key={kb.name}
                     onClick={() => handleSelectKB(kb.name)}
                     disabled={connectionLoading}
-                    className={`w-full p-3 border rounded-lg text-left transition-colors disabled:opacity-50 ${
-                      selectedKB === kb.name
-                        ? 'bg-primary/10 border-primary/20'
-                        : 'bg-background border-border hover:bg-surface-hover'
-                    }`}
+                    className={`w-full p-3 border rounded-lg text-left transition-colors disabled:opacity-50 ${selectedKB === kb.name
+                      ? 'bg-primary/10 border-primary/20'
+                      : 'bg-background border-border hover:bg-surface-hover'
+                      }`}
                   >
                     <div className="font-medium text-text">{kb.name}</div>
                     <div className="text-xs text-text-secondary">
@@ -347,12 +436,22 @@ export default function AIAgentPage() {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-text flex items-center gap-2">
-          <Brain className="w-6 h-6 text-primary" />
-          AI Agent
+          {(() => {
+            const config = agentConfig && PERSONA_CONFIG[agentConfig.agent_type] ? PERSONA_CONFIG[agentConfig.agent_type] : PERSONA_CONFIG.generic;
+            const Icon = config.icon;
+            return (
+              <>
+                <Icon className="w-6 h-6 text-primary" />
+                {config.label}
+              </>
+            );
+          })()}
           <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-normal">BETA</span>
         </h1>
         <p className="text-text-secondary mt-1">
-          Unified AI agent with database tools and knowledge base access - automatically routes your questions
+          {agentConfig && PERSONA_CONFIG[agentConfig.agent_type]
+            ? PERSONA_CONFIG[agentConfig.agent_type].description
+            : PERSONA_CONFIG.generic.description}
         </p>
       </div>
 
@@ -365,11 +464,10 @@ export default function AIAgentPage() {
             <button
               onClick={() => setShowKBModal(true)}
               disabled={availableKBs.length === 0}
-              className={`px-3 py-1.5 border rounded-lg text-sm text-text transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-                selectedKB
-                  ? 'bg-primary/10 border-primary/20 hover:bg-primary/20'
-                  : 'bg-background border-border hover:bg-surface-hover'
-              }`}
+              className={`px-3 py-1.5 border rounded-lg text-sm text-text transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${selectedKB
+                ? 'bg-primary/10 border-primary/20 hover:bg-primary/20'
+                : 'bg-background border-border hover:bg-surface-hover'
+                }`}
             >
               <FileText className={`w-4 h-4 ${selectedKB ? 'text-primary' : ''}`} />
               {selectedKB || (availableKBs.length > 0 ? 'Select Knowledge Base' : 'No KBs Available')}
@@ -389,15 +487,14 @@ export default function AIAgentPage() {
             <button
               onClick={() => setShowDBModal(true)}
               disabled={dbConnections.length === 0 && !isDatabaseConnected}
-              className={`px-3 py-1.5 border rounded-lg text-sm text-text transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-                isDatabaseConnected
-                  ? 'bg-primary/10 border-primary/20 hover:bg-primary/20'
-                  : 'bg-background border-border hover:bg-surface-hover'
-              }`}
+              className={`px-3 py-1.5 border rounded-lg text-sm text-text transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${isDatabaseConnected
+                ? 'bg-primary/10 border-primary/20 hover:bg-primary/20'
+                : 'bg-background border-border hover:bg-surface-hover'
+                }`}
             >
               <Database className={`w-4 h-4 ${isDatabaseConnected ? 'text-primary' : ''}`} />
-              {selectedDBConnection || (isDatabaseConnected 
-                ? 'Connected' 
+              {selectedDBConnection || (isDatabaseConnected
+                ? 'Connected'
                 : (dbConnections.length > 0 ? 'Select Connection' : 'No Connections'))}
             </button>
           </div>
@@ -427,8 +524,14 @@ export default function AIAgentPage() {
       <div className="flex-1 overflow-y-auto mb-4 space-y-4">
         {messages.length === 0 && (
           <Card className="p-8 text-center bg-surface border-border">
-            <Brain className="w-12 h-12 text-text-secondary mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-text mb-2">Ask me anything</h3>
+            {(() => {
+              const config = agentConfig && PERSONA_CONFIG[agentConfig.agent_type] ? PERSONA_CONFIG[agentConfig.agent_type] : PERSONA_CONFIG.generic;
+              const Icon = config.icon;
+              return <Icon className="w-12 h-12 text-text-secondary mx-auto mb-4" />;
+            })()}
+            <h3 className="text-lg font-medium text-text mb-2">
+              Ask {agentConfig && PERSONA_CONFIG[agentConfig.agent_type] ? `your ${PERSONA_CONFIG[agentConfig.agent_type].label}` : 'me'} anything
+            </h3>
             <p className="text-text-secondary mb-4">
               I can answer questions using your database or knowledge base documents
             </p>
@@ -460,13 +563,28 @@ export default function AIAgentPage() {
                 </div>
               ) : (
                 <Card className={`p-4 ${msg.type === 'system' && msg.isError ? 'bg-error/10 border-error/20' : 'bg-surface border-border'}`}>
+                  {msg.type === 'assistant' && (
+                    <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-primary/80">
+                      {(() => {
+                        const personaKey = msg.agent_type || (agentConfig?.agent_type) || 'generic';
+                        const config = PERSONA_CONFIG[personaKey] || PERSONA_CONFIG.generic;
+                        const Icon = config.icon;
+                        return (
+                          <>
+                            <Icon className="w-3.5 h-3.5" />
+                            {config.label}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
                   {msg.type === 'system' && msg.isError && (
                     <div className="flex items-start gap-2 mb-2">
                       <AlertCircle className="w-4 h-4 text-error flex-shrink-0 mt-0.5" />
                       <span className="text-sm font-medium text-error">Error</span>
                     </div>
                   )}
-                  
+
                   {msg.source && (
                     <div className="flex items-center gap-1.5 mb-2 text-xs text-text-secondary">
                       {msg.source === 'database' ? (
@@ -477,7 +595,53 @@ export default function AIAgentPage() {
                     </div>
                   )}
 
-                  <div className="text-text whitespace-pre-wrap">{msg.content}</div>
+                  <div className="text-text whitespace-pre-wrap">
+                    {(() => {
+                      let content = msg.content;
+                      if (typeof content === 'string' && content.trim().startsWith('{')) {
+                        try {
+                          content = JSON.parse(content);
+                        } catch (e) { }
+                      }
+
+                      if (typeof content === 'object' && content !== null) {
+                        const type = content.type || content.component;
+                        switch (type) {
+                          case 'certificate_card':
+                            return (
+                              <CertificateCard
+                                project={content.project}
+                                status={content.status}
+                                date={content.date}
+                                tonnage={content.tonnage}
+                              />
+                            );
+                          case 'product_gallery':
+                          case 'product_list':
+                            return <ProductGallery products={content.products || []} />;
+                          case 'impact_stats':
+                            return (
+                              <ImpactStats
+                                contribution={content.contribution}
+                                trees_equivalent={content.trees_equivalent}
+                                rank={content.rank}
+                              />
+                            );
+                          case 'url_action':
+                            return (
+                              <UrlAction
+                                label={content.label}
+                                url={content.url}
+                                type={content.action_type}
+                              />
+                            );
+                          default:
+                            return <pre className="text-xs bg-background p-2 rounded">{JSON.stringify(content, null, 2)}</pre>;
+                        }
+                      }
+                      return content;
+                    })()}
+                  </div>
 
                   {msg.metadata?.sql && (
                     <details className="mt-3">

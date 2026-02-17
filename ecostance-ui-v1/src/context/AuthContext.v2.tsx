@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
-import { authAPI, setAccessToken, clearTokens, getTimeUntilExpiry, isTokenExpired } from '../services/api';
+import { authAPI, tenantsAPI, setAccessToken, clearTokens, getTimeUntilExpiry, isTokenExpired } from '../services/api';
 import { SessionTimeoutWarning } from '../components/SessionTimeoutWarning';
 
 // --- Configuration ---
@@ -8,11 +8,13 @@ const TOKEN_REFRESH_INTERVAL = 25 * 60 * 1000; // Refresh every 25 minutes (befo
 const SESSION_WARNING_THRESHOLD = 5 * 60; // Show warning 5 minutes before expiry
 // ---------------------
 
-interface User {
+export interface User {
   id: string;
   email: string;
   tenantId: string;
   role?: string;
+  billingTier?: string;
+  trialEndsAt?: string | null;
 }
 
 interface AuthContextType {
@@ -23,6 +25,10 @@ interface AuthContextType {
   logout: () => Promise<void>;
   register: (email: string, password: string, tenantId: string) => Promise<void>;
   refreshSession: () => Promise<void>;
+  billingStatus?: string;
+  trialEndsAt?: string | null;
+  billingTier?: string;
+  updateUser: (user: User | null) => void;
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -107,6 +113,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           email: 'dev@example.com',
           tenantId: 'dev-tenant',
           role: 'admin',
+          billingTier: 'free',
+          trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
         };
         setUser(mockUser);
         setIsAuthLoading(false);
@@ -115,33 +123,57 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       try {
         // Try to refresh the session using the httpOnly cookie
-        // This will work even if the access token in memory is lost
-        const response = await authAPI.refresh() as {
-          access_token: string;
-          expires_in: number;
-          tenant_id?: string;
-          user_id?: string;
-          email?: string;
-          role?: string;
-        };
+        const response = await authAPI.refresh() as any;
 
         if (response.access_token) {
-          // Store the new access token
-          setAccessToken(response.access_token, response.expires_in);
-
-          // Set user data
-          const userData: User = {
-            id: response.user_id || 'user',
-            email: response.email || '',
-            tenantId: response.tenant_id || '',
-            role: response.role,
-          };
-          setUser(userData);
+          // Fetch full tenant info for trial status
+          try {
+            const tenantData = await tenantsAPI.getCurrentTenant() as any;
+            const userData: User = {
+              id: response.user_id || response.user?.id || 'user',
+              email: response.email || response.user?.email || '',
+              tenantId: response.tenant_id || response.user?.tenant_id || '',
+              role: response.role || response.user?.role,
+              billingTier: tenantData.billing_tier || tenantData.billingTier,
+              trialEndsAt: tenantData.trial_ends_at || tenantData.trialEndsAt,
+            };
+            console.log('✅ AuthContext: User session verified with trial data:', {
+              tier: userData.billingTier,
+              expires: userData.trialEndsAt
+            });
+            setUser(userData);
+            localStorage.setItem('user', JSON.stringify(userData));
+          } catch (tenantErr) {
+            console.error('❌ AuthContext: Failed to fetch initial tenant data:', tenantErr);
+            const userData: User = {
+              id: response.user_id || response.user?.id || 'user',
+              email: response.email || response.user?.email || '',
+              tenantId: response.tenant_id || response.user?.tenant_id || '',
+              role: response.role || response.user?.role,
+            };
+            setUser(userData);
+          }
           setupTokenRefresh();
         }
       } catch (error) {
-        console.log('No valid session found, redirecting to login');
-        clearTokens();
+        console.log('ℹ️ AuthContext: Session refresh failed, checking local storage...');
+        // Fallback: Check if we have a valid-looking session in localStorage
+        const storedUser = localStorage.getItem('user');
+        const storedToken = localStorage.getItem('access_token');
+
+        if (storedUser && storedToken) {
+          try {
+            const userData = JSON.parse(storedUser);
+            setUser(userData);
+            setAccessToken(storedToken); // Restore memory token
+            console.log('Restored session from localStorage');
+          } catch (e) {
+            console.error('Failed to restore local session:', e);
+            clearTokens();
+          }
+        } else {
+          clearTokens();
+        }
       } finally {
         setIsAuthLoading(false);
       }
@@ -164,6 +196,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         email: email || 'dev@example.com',
         tenantId: 'dev-tenant',
         role: 'admin',
+        billingTier: 'free',
+        trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
       };
       setUser(mockUser);
       // Set a mock token for API calls
@@ -182,10 +216,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         role?: string;
       };
 
-      // Store access token in memory
+      // Store access token in memory and local storage via helper
       setAccessToken(access_token, expires_in);
 
       // Refresh token is automatically stored in httpOnly cookie by backend
+
+      // Fetch full tenant info for trial status
+      const tenantData = await tenantsAPI.getCurrentTenant() as any;
 
       // Set user data
       const userData: User = {
@@ -193,8 +230,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         email: email,
         tenantId: tenant_id || '',
         role: role,
+        billingTier: tenantData.billing_tier || tenantData.billingTier,
+        trialEndsAt: tenantData.trial_ends_at || tenantData.trialEndsAt,
       };
+
+      console.log('✅ AuthContext: Login successful with trial data:', {
+        tier: userData.billingTier,
+        expires: userData.trialEndsAt
+      });
+
       setUser(userData);
+      localStorage.setItem('user', JSON.stringify(userData));
 
       // Setup automatic token refresh
       setupTokenRefresh();
@@ -268,6 +314,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logout,
     register,
     refreshSession,
+    billingTier: user?.billingTier,
+    trialEndsAt: user?.trialEndsAt,
+    updateUser: (newUser: User | null) => {
+      setUser(newUser);
+      if (newUser) {
+        localStorage.setItem('user', JSON.stringify(newUser));
+      } else {
+        localStorage.removeItem('user');
+      }
+    },
   };
 
   if (isAuthLoading) {

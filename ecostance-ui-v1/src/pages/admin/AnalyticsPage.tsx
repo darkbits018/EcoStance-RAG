@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { TrendingUp, Download } from 'lucide-react';
@@ -35,13 +35,13 @@ export default function AnalyticsPage() {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      
+
       if (!response.ok) {
         console.error('Failed to fetch analytics:', response.status);
         setSummary(null);
         return;
       }
-      
+
       const data = await response.json();
       setSummary(data);
     } catch (error) {
@@ -91,72 +91,67 @@ export default function AnalyticsPage() {
           <Card className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Queries</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
+                <p className="text-sm text-text-secondary">Total Queries</p>
+                <p className="text-3xl font-bold text-text mt-2">
                   {(summary.total_queries || 0).toLocaleString()}
                 </p>
               </div>
-              <TrendingUp className="w-10 h-10 text-blue-600" />
+              <TrendingUp className="w-10 h-10 text-blue-400" />
             </div>
           </Card>
-
           <Card className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Documents</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
+                <p className="text-sm text-text-secondary">Total Documents</p>
+                <p className="text-3xl font-bold text-text mt-2">
                   {(summary.total_documents || 0).toLocaleString()}
                 </p>
               </div>
-              <TrendingUp className="w-10 h-10 text-purple-600" />
+              <TrendingUp className="w-10 h-10 text-purple-400" />
             </div>
           </Card>
-
           <Card className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Storage</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
+                <p className="text-sm text-text-secondary">Total Storage</p>
+                <p className="text-3xl font-bold text-text mt-2">
                   {(summary.total_storage_gb || 0).toFixed(1)} GB
                 </p>
               </div>
-              <TrendingUp className="w-10 h-10 text-green-600" />
+              <TrendingUp className="w-10 h-10 text-green-400" />
             </div>
           </Card>
-
           <Card className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Active Tenants</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
+                <p className="text-sm text-text-secondary">Active Tenants</p>
+                <p className="text-3xl font-bold text-text mt-2">
                   {summary.active_tenants || 0}
                 </p>
               </div>
-              <TrendingUp className="w-10 h-10 text-indigo-600" />
+              <TrendingUp className="w-10 h-10 text-indigo-400" />
             </div>
           </Card>
-
           <Card className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Avg Queries/Tenant</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
+                <p className="text-sm text-text-secondary">Avg Queries/Tenant</p>
+                <p className="text-3xl font-bold text-text mt-2">
                   {(summary.avg_queries_per_tenant || 0).toFixed(0)}
                 </p>
               </div>
-              <TrendingUp className="w-10 h-10 text-orange-600" />
+              <TrendingUp className="w-10 h-10 text-orange-400" />
             </div>
           </Card>
-
           <Card className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Avg Response Time</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
+                <p className="text-sm text-text-secondary">Avg Response Time</p>
+                <p className="text-3xl font-bold text-text mt-2">
                   {summary.avg_response_time_ms || 0}ms
                 </p>
               </div>
-              <TrendingUp className="w-10 h-10 text-pink-600" />
+              <TrendingUp className="w-10 h-10 text-pink-400" />
             </div>
           </Card>
         </div>

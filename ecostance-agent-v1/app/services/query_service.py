@@ -4,19 +4,27 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.documents import Document # Import Document for type hinting if needed
+from langchain_core.documents import Document
+from langchain_groq import ChatGroq
 import logging
 import time
 
 from app.config import GOOGLE_API_KEY, QDRANT_URL, QDRANT_API_KEY, EMBEDDING_MODEL_NAME
 from .langsmith_service import trace_rag, trace_llm
+from .language_service import get_language_service
+from .multilingual_embedding_service import create_multilingual_embeddings
+from app.config.multilingual_app_config import (
+    CROSS_LANGUAGE_ENABLED,
+    SAME_LANGUAGE_BOOST,
+    CROSS_LANGUAGE_MIN_SIMILARITY
+)
 
 # Import LangSmith traceable for proper hierarchy
 from langsmith import traceable
 
 # === BEGIN: branch error handling ===
 from ..core.logging import get_logger, log_error_with_context, log_operation_start, log_operation_success, log_operation_failure
-from ..core.exceptions import ExternalServiceError, ValidationError
+from ..core.exceptions import ExternalServiceError, ValidationError, ResourceNotFoundError
 # === END: branch error handling ===
 
 # Configure logging for this module
@@ -26,49 +34,39 @@ logging.basicConfig(level=logging.INFO) # Ensure basic config is set if not alre
 # --- Service Initialization ---
 
 @trace_llm
-def get_llm():
+def get_llm(provider: str = None, model: str = None, temperature: float = 0.3):
     """
-    Initializes and returns the Gemini LLM with optimized settings.
+    Returns an LLM instance based on the specified provider and model.
+    """
+    from app.config import LLM_PROVIDER as DEFAULT_PROVIDER
+    from app.config import AGENT_MODEL as DEFAULT_MODEL
+    from app.config import GOOGLE_API_KEY, GROQ_API_KEY
     
-    Temperature is set low (0.3) for more consistent, factual responses
-    while still allowing some flexibility in phrasing.
-    """
-    # === BEGIN: branch error handling ===
+    provider = (provider or DEFAULT_PROVIDER or "gemini").lower()
+    model = model or DEFAULT_MODEL or ("gemini-2.5-flash-lite" if provider == "gemini" else "llama-3.1-8b-instant")
+    
     try:
-        if not GOOGLE_API_KEY:
-            raise ValidationError(
-                message="Google API key is not configured",
-                field="GOOGLE_API_KEY"
+        if provider == "gemini":
+            if not GOOGLE_API_KEY:
+                raise ValidationError("GOOGLE_API_KEY is not configured", "GOOGLE_API_KEY")
+            return ChatGoogleGenerativeAI(
+                model=model,
+                google_api_key=GOOGLE_API_KEY,
+                temperature=temperature
             )
-        
-        log_operation_start(logger, "initialize_llm", model="gemini-2.5-flash-lite")
-        
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash-lite",
-            google_api_key=GOOGLE_API_KEY,
-            temperature=0.3,  # Slightly higher for more natural responses
-            max_output_tokens=1024  # Ensure complete answers
-        )
-        
-        log_operation_success(logger, "initialize_llm")
-        return llm
-        
+        elif provider == "groq":
+            if not GROQ_API_KEY:
+                raise ValidationError("GROQ_API_KEY is not configured", "GROQ_API_KEY")
+            return ChatGroq(
+                model=model,
+                groq_api_key=GROQ_API_KEY,
+                temperature=temperature
+            )
+        else:
+            raise ValidationError(f"Unsupported provider: {provider}", "provider")
     except Exception as e:
-        if isinstance(e, ValidationError):
-            raise
-        
-        log_error_with_context(
-            logger=logger,
-            message="Failed to initialize Gemini LLM",
-            error=e,
-            remediation="Check Google API key configuration and network connectivity"
-        )
-        raise ExternalServiceError(
-            service_name="Google Gemini",
-            operation="initialization",
-            original_error=str(e)
-        )
-    # === END: branch error handling ===
+        log_error_with_context(logger, f"Failed to initialize {provider} LLM", e)
+        raise ExternalServiceError(provider, "initialization", str(e))
 
 @trace_rag
 def get_retriever(collection_name: str, top_k: int = 5):
@@ -135,6 +133,14 @@ def get_retriever(collection_name: str, top_k: int = 5):
     except ValidationError:
         raise
     except Exception as e:
+        error_str = str(e)
+        if "404" in error_str or "Not found" in error_str or "doesn't exist" in error_str:
+            raise ResourceNotFoundError(
+                resource_type="Knowledge Base Collection",
+                resource_id=collection_name,
+                remediation="Please use list_available_knowledge_bases to find the correct collection name."
+            )
+            
         log_error_with_context(
             logger=logger,
             message=f"Failed to initialize retriever for collection '{collection_name}'",
@@ -145,7 +151,7 @@ def get_retriever(collection_name: str, top_k: int = 5):
         raise ExternalServiceError(
             service_name="Qdrant",
             operation="retriever_initialization",
-            original_error=str(e)
+            original_error=error_str
         )
     # === END: branch error handling ===
 
@@ -282,6 +288,8 @@ def execute_query(collection_name: str, query: str, chat_history: list = None, t
         # Create RAG chain with error handling
         try:
             rag_chain = create_rag_chain(collection_name)
+        except (ValidationError, ResourceNotFoundError, ExternalServiceError):
+            raise
         except Exception as e:
             raise ExternalServiceError(
                 service_name="RAG Chain",
@@ -336,7 +344,7 @@ def execute_query(collection_name: str, query: str, chat_history: list = None, t
         
         return answer
         
-    except (ValidationError, ExternalServiceError):
+    except (ValidationError, ResourceNotFoundError, ExternalServiceError) as e:
         # Re-raise known exceptions
         duration_ms = int((time.time() - start_time) * 1000)
         log_operation_failure(

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Trash2, Database, Archive, Zap } from 'lucide-react';
@@ -96,14 +96,14 @@ export default function MaintenancePage() {
                   <Icon className="w-6 h-6 text-blue-600" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-bold text-gray-900">{task.name}</h3>
-                  <p className="text-sm text-gray-600 mt-1">{task.description}</p>
+                  <h3 className="text-lg font-bold text-text">{task.name}</h3>
+                  <p className="text-sm text-text-secondary mt-1">{task.description}</p>
                   <div className="mt-3 space-y-1 text-sm">
-                    <p className="text-gray-600">
-                      <span className="font-medium">Last run:</span> {task.lastRun}
+                    <p className="text-text-secondary">
+                      <span className="font-medium text-text">Last run:</span> {task.lastRun}
                     </p>
-                    <p className="text-gray-600">
-                      <span className="font-medium">Items to clean:</span> {task.itemsToClean}
+                    <p className="text-text-secondary">
+                      <span className="font-medium text-text">Items to clean:</span> {task.itemsToClean}
                     </p>
                   </div>
                   <Button
@@ -122,8 +122,8 @@ export default function MaintenancePage() {
       </div>
 
       <Card className="p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Run All Cleanup Tasks</h2>
-        <p className="text-gray-600 mb-4">
+        <h2 className="text-xl font-bold text-text mb-4">Run All Cleanup Tasks</h2>
+        <p className="text-text-secondary mb-4">
           Execute all cleanup tasks in sequence. This may take several minutes.
         </p>
         <Button

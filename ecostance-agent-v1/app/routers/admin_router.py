@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
+import logging
 from app.db.database import get_db
 from app.auth.dependencies import require_admin, require_super_admin
 from app.services.cleanup_service import CleanupService
@@ -14,6 +15,7 @@ from app.config import QDRANT_URL, QDRANT_API_KEY
 from qdrant_client import QdrantClient
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
 
 
 class TenantDeletionRequest(BaseModel):
@@ -383,10 +385,13 @@ async def update_tenant_tier(
     """
     try:
         from app.models.tenant import Tenant
+        from app.services.quota_service import QuotaService
         from datetime import datetime
         
+        quota_service = QuotaService(db)
+        
         # Validate tier
-        valid_tiers = ["free", "starter", "professional", "enterprise"]
+        valid_tiers = list(QuotaService.TIER_QUOTAS.keys())
         if tier not in valid_tiers:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -404,42 +409,15 @@ async def update_tenant_tier(
         old_tier = tenant.billing_tier
         tenant.billing_tier = tier
         
-        # Update quotas based on tier
-        tier_quotas = {
-            "free": {
-                "max_storage_bytes": 10 * 1024**3,  # 10GB
-                "max_queries_per_day": 1000,
-                "max_queries_per_month": 30000,
-                "max_documents": 10000,
-                "max_db_connections": 5
-            },
-            "starter": {
-                "max_storage_bytes": 50 * 1024**3,  # 50GB
-                "max_queries_per_day": 5000,
-                "max_queries_per_month": 150000,
-                "max_documents": 50000,
-                "max_db_connections": 10
-            },
-            "professional": {
-                "max_storage_bytes": 200 * 1024**3,  # 200GB
-                "max_queries_per_day": 20000,
-                "max_queries_per_month": 600000,
-                "max_documents": 200000,
-                "max_db_connections": 25,
-                "features": ["rag", "db_chat", "custom_embeddings", "api_access", "priority_support", "multilingual"]
-            },
-            "enterprise": {
-                "max_storage_bytes": 1000 * 1024**3,  # 1TB
-                "max_queries_per_day": 100000,
-                "max_queries_per_month": 3000000,
-                "max_documents": 1000000,
-                "max_db_connections": 100,
-                "features": ["rag", "db_chat", "custom_embeddings", "api_access", "priority_support", "sla", "dedicated_support", "multilingual"]
-            }
-        }
+        # Get quotas for the new tier
+        tier_quotas = QuotaService.TIER_QUOTAS[tier]
         
+        # Update quotas in the tenant_quotas table
+        quota_service.update_tenant_quotas(tenant_id, tier_quotas)
+        
+        # Also update settings for display/legacy purposes
         settings = tenant.settings or {}
-        settings.update(tier_quotas[tier])
+        settings.update(tier_quotas)
         tenant.settings = settings
         tenant.updated_at = datetime.utcnow()
         
@@ -453,12 +431,13 @@ async def update_tenant_tier(
                 "tenant_id": tenant_id,
                 "old_tier": old_tier,
                 "new_tier": tier,
-                "quotas": tier_quotas[tier]
+                "quotas": tier_quotas
             }
         }
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error updating tenant tier: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update tenant tier: {str(e)}"

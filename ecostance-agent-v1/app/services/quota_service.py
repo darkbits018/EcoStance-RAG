@@ -33,37 +33,27 @@ class QuotaExceededException(Exception):
 class QuotaService:
     """Service for managing tenant quotas and usage tracking."""
     
-    # Default quota values by tier
+    # Updated TIER_QUOTAS: Free Trial, Business, and Enterprise
     TIER_QUOTAS = {
-        "free": {
-            "max_queries_per_day": 100,
-            "max_queries_per_month": 3000,
-            "max_documents": 1000,
-            "max_storage_bytes": 1073741824,  # 1GB
+        "free_trial": {
+            "max_queries_per_day": 500,
+            "max_queries_per_month": 15000,
+            "max_documents": 5000,
+            "max_storage_bytes": 5368709120,  # 5GB
             "max_db_connections": 2,
-            "max_concurrent_queries": 3,
-            "max_api_calls_per_minute": 10,
-            "max_api_calls_per_hour": 600,
+            "max_concurrent_queries": 5,
+            "max_api_calls_per_minute": 30,
+            "max_api_calls_per_hour": 1800,
         },
-        "starter": {
-            "max_queries_per_day": 1000,
-            "max_queries_per_month": 30000,
-            "max_documents": 10000,
-            "max_storage_bytes": 10737418240,  # 10GB
-            "max_db_connections": 5,
-            "max_concurrent_queries": 10,
-            "max_api_calls_per_minute": 60,
-            "max_api_calls_per_hour": 3600,
-        },
-        "professional": {
-            "max_queries_per_day": 10000,
-            "max_queries_per_month": 300000,
-            "max_documents": 100000,
-            "max_storage_bytes": 107374182400,  # 100GB
-            "max_db_connections": 20,
-            "max_concurrent_queries": 50,
-            "max_api_calls_per_minute": 300,
-            "max_api_calls_per_hour": 18000,
+        "business": {
+            "max_queries_per_day": 500,
+            "max_queries_per_month": 15000,
+            "max_documents": 5000,
+            "max_storage_bytes": 5368709120,  # 5GB
+            "max_db_connections": 2,
+            "max_concurrent_queries": 5,
+            "max_api_calls_per_minute": 30,
+            "max_api_calls_per_hour": 1800,
         },
         "enterprise": {
             "max_queries_per_day": -1,  # Unlimited
@@ -71,7 +61,7 @@ class QuotaService:
             "max_documents": -1,
             "max_storage_bytes": -1,
             "max_db_connections": 100,
-            "max_concurrent_queries": 200,
+            "max_concurrent_queries": 500,
             "max_api_calls_per_minute": 1000,
             "max_api_calls_per_hour": 60000,
         }
@@ -150,9 +140,23 @@ class QuotaService:
                 )
                 return quotas
             
+            # Mapping of legacy tiers to new structure
+            tier_map = {
+                "free": "free_trial",
+                "starter": "business",
+                "professional": "business"
+            }
+            
             # Return default quotas based on tier
-            tier = tenant.billing_tier or "free"
-            quotas = self.TIER_QUOTAS.get(tier, self.TIER_QUOTAS["free"])
+            raw_tier = tenant.billing_tier or "free_trial"
+            tier = tier_map.get(raw_tier, raw_tier)
+            
+            # Final safety check for tier existence
+            if tier not in self.TIER_QUOTAS:
+                logger.warning(f"Unknown tier '{tier}' for tenant {tenant_id}. Falling back to free_trial.")
+                tier = "free_trial"
+                
+            quotas = self.TIER_QUOTAS[tier]
             
             log_operation_success(
                 logger, 
@@ -554,42 +558,40 @@ class QuotaService:
             tenant_id: Tenant identifier
             quotas: Dictionary of quota values to update
         """
+        from app.models.tenant_quota import TenantQuota
+        
         # Verify tenant exists
         tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first()
         if not tenant:
             raise ValueError(f"Tenant {tenant_id} not found")
         
-        # Build update query
-        valid_fields = [
-            "max_queries_per_day", "max_queries_per_month", "max_documents",
-            "max_storage_bytes", "max_db_connections", "max_concurrent_queries",
-            "max_api_calls_per_minute", "max_api_calls_per_hour"
-        ]
+        # Get or create quota record
+        quota_record = self.db.query(TenantQuota).filter(TenantQuota.tenant_id == tenant_id).first()
+        if not quota_record:
+            quota_record = TenantQuota(tenant_id=tenant_id)
+            self.db.add(quota_record)
         
-        updates = []
-        params = {"tenant_id": tenant_id, "updated_at": datetime.utcnow()}
+        # Map incoming quota keys to model fields
+        # Note: QuotaService.TIER_QUOTAS uses "max_..." names
+        field_map = {
+            "max_queries_per_day": "queries_limit_daily",
+            "max_queries_per_month": "queries_limit_monthly",
+            "max_documents": "documents_limit",
+            "max_storage_bytes": "storage_limit",
+            "max_db_connections": "db_connections_limit"
+        }
         
-        for field, value in quotas.items():
-            if field in valid_fields:
-                updates.append(f"{field} = :{field}")
-                params[field] = value
+        for input_key, value in quotas.items():
+            model_attr = field_map.get(input_key, input_key)
+            if hasattr(quota_record, model_attr):
+                # Ensure value is treated as an integer if it's a quota limit
+                if value == -1: # Handle "Unlimited" logic if applicable
+                    # Logic depends on how model handles -1, for now just set it
+                    setattr(quota_record, model_attr, value)
+                else:
+                    setattr(quota_record, model_attr, value)
         
-        if not updates:
-            return
-        
-        # Build placeholders for INSERT
-        field_placeholders = ', '.join([f":{f}" for f in valid_fields])
-        
-        # Update or insert quotas
-        self.db.execute(
-            text(f"""
-            INSERT INTO tenant_quotas (tenant_id, {', '.join(valid_fields)}, updated_at)
-            VALUES (:tenant_id, {field_placeholders}, :updated_at)
-            ON CONFLICT(tenant_id) 
-            DO UPDATE SET {', '.join(updates)}, updated_at = :updated_at
-            """),
-            {**params, **{f: quotas.get(f, 0) for f in valid_fields}}
-        )
+        quota_record.updated_at = datetime.utcnow()
         self.db.commit()
         
         logger.info(f"Updated quotas for tenant {tenant_id}")

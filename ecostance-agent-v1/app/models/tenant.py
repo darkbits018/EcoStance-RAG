@@ -50,13 +50,18 @@ class Tenant(Base):
     # }
     
     # Billing information
-    billing_tier = Column(String(50), default="free")  # free, starter, professional, enterprise
+    billing_tier = Column(String(50), default="free_trial")  # free_trial, business, enterprise
     billing_status = Column(String(50), default="active")  # active, suspended, cancelled
+    trial_ends_at = Column(DateTime, nullable=True)  # Date when free trial expires
     
     # Relationships
     databases = relationship("TenantDatabase", back_populates="tenant", cascade="all, delete-orphan")
     knowledge_bases = relationship("TenantKnowledgeBase", back_populates="tenant", cascade="all, delete-orphan")
     users = relationship("TenantUser", back_populates="tenant", cascade="all, delete-orphan")
+    roles = relationship("TenantRole", back_populates="tenant", cascade="all, delete-orphan")
+    quotas = relationship("TenantQuota", back_populates="tenant", cascade="all, delete-orphan")
+    subscription = relationship("BillingSubscription", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
+    transactions = relationship("BillingTransaction", back_populates="tenant", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Tenant(id={self.id}, name={self.name}, slug={self.slug})>"
@@ -74,5 +79,6 @@ class Tenant(Base):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "settings": self.settings,
             "billing_tier": self.billing_tier,
-            "billing_status": self.billing_status
+            "billing_status": self.billing_status,
+            "trial_ends_at": self.trial_ends_at.isoformat() if self.trial_ends_at else None
         }

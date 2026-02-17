@@ -32,7 +32,16 @@ interface PublicChatConfig {
     allow_feedback: boolean;
     show_suggested_questions: boolean;
   };
+  agent_type: string;
 }
+
+const PERSONA_CONFIG: Record<string, { label: string; icon: any }> = {
+  security_analyst: { label: 'SOC Assistant', icon: Icons.Shield },
+  quickship: { label: 'Logistics Support', icon: Icons.Package },
+  ecommerce: { label: 'Shopping Assistant', icon: Icons.ShoppingCart || Icons.LayoutGrid },
+  ecostance: { label: 'Sustainability Expert', icon: Icons.Leaf || Icons.Activity },
+  generic: { label: 'AI Assistant', icon: Icons.Sparkles },
+};
 
 const AdminPublicChatPage: React.FC = () => {
   const [config, setConfig] = useState<PublicChatConfig | null>(null);
@@ -51,25 +60,25 @@ const AdminPublicChatPage: React.FC = () => {
           publicChatAPI.admin.getConfig(),
           publicChatAPI.admin.getAvailableKBs(),
         ]);
-        
+
         setConfig(configData as any);
-        
+
         // Transform KB data - the endpoint returns an array of strings
-        const transformedKBs: KnowledgeBase[] = Array.isArray(kbsData) 
+        const transformedKBs: KnowledgeBase[] = Array.isArray(kbsData)
           ? (kbsData as any[]).map((kb: any) => {
-              if (typeof kb === 'string') {
-                return {
-                  kb_name: kb,
-                  document_count: 0,
-                };
-              }
+            if (typeof kb === 'string') {
               return {
-                kb_name: kb.kb_name || kb.name || String(kb),
-                document_count: kb.document_count || kb.documents?.length || 0,
+                kb_name: kb,
+                document_count: 0,
               };
-            })
+            }
+            return {
+              kb_name: kb.kb_name || kb.name || String(kb),
+              document_count: kb.document_count || kb.documents?.length || 0,
+            };
+          })
           : [];
-        
+
         setKnowledgeBases(transformedKBs);
       } catch (err: any) {
         console.error('Error loading data:', err);
@@ -113,7 +122,7 @@ const AdminPublicChatPage: React.FC = () => {
 
   const handleSave = async () => {
     if (!config) return;
-    
+
     setIsSaving(true);
     try {
       await publicChatAPI.admin.updateConfig(config);
@@ -176,13 +185,13 @@ const AdminPublicChatPage: React.FC = () => {
             </Button>
           </div>
         </div>
-        
+
         {saveStatus === 'success' && (
           <div className="mt-4 p-3 bg-success/20 border border-success rounded-lg text-success">
             ✅ Configuration saved successfully!
           </div>
         )}
-        
+
         {saveStatus === 'error' && (
           <div className="mt-4 p-3 bg-error/20 border border-error rounded-lg text-error">
             ❌ Error saving configuration. Please try again.
@@ -206,7 +215,23 @@ const AdminPublicChatPage: React.FC = () => {
                 />
                 <Label>Enable Public Chat</Label>
               </div>
-              
+
+              {config.agent_type && (
+                <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const persona = PERSONA_CONFIG[config.agent_type] || PERSONA_CONFIG.generic;
+                      const Icon = persona.icon;
+                      return <Icon className="w-4 h-4 text-primary" />;
+                    })()}
+                    <span className="text-sm font-medium text-text">Assigned Persona</span>
+                  </div>
+                  <Badge variant="secondary">
+                    {PERSONA_CONFIG[config.agent_type]?.label || config.agent_type.replace(/_/g, ' ')}
+                  </Badge>
+                </div>
+              )}
+
               <div>
                 <Label htmlFor="welcomeMessage">Welcome Message</Label>
                 <Input
@@ -238,7 +263,7 @@ const AdminPublicChatPage: React.FC = () => {
                   className="mt-1"
                 />
               </div>
-              
+
               <div>
                 <Label htmlFor="primaryColor">Primary Color</Label>
                 <div className="flex items-center space-x-2 mt-1">
@@ -263,7 +288,7 @@ const AdminPublicChatPage: React.FC = () => {
                   />
                 </div>
               </div>
-              
+
               <div>
                 <Label htmlFor="logo">Logo URL (optional)</Label>
                 <Input
@@ -301,7 +326,7 @@ const AdminPublicChatPage: React.FC = () => {
                   className="mt-1"
                 />
               </div>
-              
+
               <div>
                 <Label htmlFor="maxMessages">Max Messages per Session</Label>
                 <Input
@@ -357,7 +382,7 @@ const AdminPublicChatPage: React.FC = () => {
                   </>
                 )}
               </div>
-              
+
               <div className="mt-4 p-3 bg-primary/10 border border-primary/30 rounded-lg">
                 <p className="text-sm text-text">
                   💡 <strong>Tip:</strong> Only select knowledge bases that contain customer-appropriate content.
@@ -386,7 +411,7 @@ const AdminPublicChatPage: React.FC = () => {
                   </div>
                 ))}
               </div>
-              
+
               {config.suggested_questions.length < 10 && (
                 <div className="flex space-x-2">
                   <Input
@@ -401,7 +426,7 @@ const AdminPublicChatPage: React.FC = () => {
                   </Button>
                 </div>
               )}
-              
+
               <p className="text-xs text-text-secondary">
                 {config.suggested_questions.length}/10 questions
               </p>
@@ -424,7 +449,7 @@ const AdminPublicChatPage: React.FC = () => {
                 />
                 <Label>Show Source Citations</Label>
               </div>
-              
+
               <div className="flex items-center space-x-2">
                 <Checkbox
                   checked={config.features.allow_feedback}
@@ -435,7 +460,7 @@ const AdminPublicChatPage: React.FC = () => {
                 />
                 <Label>Allow Feedback (👍 👎)</Label>
               </div>
-              
+
               <div className="flex items-center space-x-2">
                 <Checkbox
                   checked={config.features.show_suggested_questions}

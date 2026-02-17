@@ -1,11 +1,11 @@
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 // Token configuration
 const TOKEN_EXPIRY_KEY = 'token_expiry';
 
-// Token management in memory (more secure than localStorage)
-let accessToken: string | null = null;
+// Token management in memory (initialized from localStorage for persistence)
+let accessToken: string | null = localStorage.getItem('access_token');
 let tokenExpiryTime: number | null = null;
 
 // Get token from memory
@@ -13,17 +13,21 @@ export const getAccessToken = (): string | null => {
   return accessToken;
 };
 
-// Set token in memory
+// Set token in memory and local storage
 export const setAccessToken = (token: string | null, expiresIn?: number): void => {
   accessToken = token;
 
-  if (token && expiresIn) {
-    // Calculate expiry time (current time + expiresIn seconds)
-    tokenExpiryTime = Date.now() + expiresIn * 1000;
-    // Store expiry in sessionStorage for persistence across page reloads
-    sessionStorage.setItem(TOKEN_EXPIRY_KEY, tokenExpiryTime.toString());
+  if (token) {
+    localStorage.setItem('access_token', token);
+    if (expiresIn) {
+      // Calculate expiry time (current time + expiresIn seconds)
+      tokenExpiryTime = Date.now() + expiresIn * 1000;
+      // Store expiry in sessionStorage for persistence across page reloads
+      sessionStorage.setItem(TOKEN_EXPIRY_KEY, tokenExpiryTime.toString());
+    }
   } else {
     tokenExpiryTime = null;
+    localStorage.removeItem('access_token');
     sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
   }
 };
@@ -63,11 +67,29 @@ export const getTimeUntilExpiry = (): number => {
 export const clearTokens = (): void => {
   accessToken = null;
   tokenExpiryTime = null;
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('user');
   sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
 };
 
 // Fetch wrapper with automatic token injection
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  console.log('🚀 fetchWithAuth:', url, options.method || 'GET');
+  // Check for trial expiration from stored user data
+  const storedUser = localStorage.getItem('user');
+  if (storedUser && !url.includes('/auth/') && !url.includes('/tenants/me') && !url.includes('/superadmin/')) {
+    try {
+      const user = JSON.parse(storedUser);
+      if (user.billingTier === 'free' && user.trialEndsAt) {
+        if (new Date(user.trialEndsAt).getTime() <= Date.now()) {
+          throw new Error('Trial expired');
+        }
+      }
+    } catch (e) {
+      // Ignore parse errors or date errors
+    }
+  }
+
   const token = getAccessToken();
   const headers = new Headers(options.headers);
 
@@ -113,12 +135,15 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
       } else {
         // Refresh failed, clear tokens and redirect to login
         clearTokens();
-        window.location.href = '/login';
+        // Redirect to appropriate login page
+        const isSuperAdminPath = window.location.pathname.startsWith('/admin');
+        window.location.href = isSuperAdminPath ? '/admin/login' : '/login';
         throw new Error('Session expired');
       }
     } catch (error) {
       clearTokens();
-      window.location.href = '/login';
+      const isSuperAdminPath = window.location.pathname.startsWith('/admin');
+      window.location.href = isSuperAdminPath ? '/admin/login' : '/login';
       throw error;
     }
   }
@@ -150,8 +175,13 @@ async function handleResponse<T>(response: Response): Promise<T> {
 // API Service Methods
 export const authAPI = {
   login: async (email: string, password: string) => {
-    const response = await fetchWithAuth('/auth/login', {
+    // Don't use fetchWithAuth for login - use direct fetch to avoid auth loops
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
       body: JSON.stringify({
         email,
         password,
@@ -248,6 +278,7 @@ export const tenantRolesAPI = {
 export const tenantsAPI = {
   register: async (data: {
     name: string;
+    company?: string;
     email: string;
     phone?: string;
     billing_tier: string;
@@ -758,14 +789,6 @@ export const adminAPI = {
     return handleResponse(response);
   },
 
-  updateTenantTier: async (tenantId: string, tier: string) => {
-    const response = await fetchWithAuth(`/admin/tenants/${tenantId}/tier`, {
-      method: 'PATCH',
-      body: JSON.stringify({ tier }),
-    });
-    return handleResponse(response);
-  },
-
   suspendTenant: async (tenantId: string, reason: string) => {
     const response = await fetchWithAuth(`/admin/tenants/${tenantId}/suspend`, {
       method: 'POST',
@@ -783,6 +806,17 @@ export const adminAPI = {
 
   getTenantActivity: async (tenantId: string, days = 7) => {
     const response = await fetchWithAuth(`/admin/tenants/${tenantId}/activity?days=${days}`);
+    return handleResponse(response);
+  },
+};
+
+export const billingAPI = {
+  createCheckout: async (planId: string, currency: 'USD' | 'INR' = 'USD') => {
+    // Backend expects plan_id and currency in the query string based on the 422 error
+    const params = new URLSearchParams({ plan_id: planId, currency });
+    const response = await fetchWithAuth(`/billing/checkout?${params.toString()}`, {
+      method: 'POST',
+    });
     return handleResponse(response);
   },
 };
@@ -807,6 +841,11 @@ export const agentAPI = {
       method: 'POST',
       body: JSON.stringify(body),
     });
+    return handleResponse(response);
+  },
+
+  getConfig: async () => {
+    const response = await fetchWithAuth('/beta/agent/config');
     return handleResponse(response);
   },
 
@@ -1024,6 +1063,37 @@ export const publicAgentAPI = {
 
     getSessionDetails: async (sessionId: string) => {
       const response = await fetchWithAuth(`/admin/public-agent/sessions/${sessionId}`);
+      return handleResponse(response);
+    },
+
+    getAvailableAgents: async () => {
+      const response = await fetchWithAuth('/admin/public-agent/available-agents');
+      return handleResponse(response);
+    },
+  },
+
+  // Super Admin endpoints for cross-tenant agent management
+  superAdmin: {
+    getTenantAgentConfig: async (tenantId: string) => {
+      const response = await fetchWithAuth(`/superadmin/public-agent/config/${tenantId}`);
+      const data = await handleResponse<any>(response);
+      return data.config || data.data || data;
+    },
+
+    updateTenantAgentConfig: async (tenantId: string, config: {
+      agent_type: string;
+      enabled?: boolean;
+      allowed_tools?: string[];
+      branding?: {
+        logo_url?: string;
+        primary_color?: string;
+        company_name?: string;
+      };
+    }) => {
+      const response = await fetchWithAuth(`/superadmin/public-agent/config/${tenantId}`, {
+        method: 'PUT',
+        body: JSON.stringify(config),
+      });
       return handleResponse(response);
     },
   },

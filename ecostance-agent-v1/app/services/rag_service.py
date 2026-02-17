@@ -12,6 +12,12 @@ from ..services.qdrant_service import get_qdrant_client
 from ..services.tenant_service import get_tenant_service
 from ..services.llm_tracking_service import LLMTrackingService
 from ..services.cache_service import cache_get, cache_set
+from ..services.language_service import get_language_service
+from ..config.multilingual_app_config import (
+    CROSS_LANGUAGE_ENABLED,
+    SAME_LANGUAGE_BOOST,
+    get_multilingual_collection_name
+)
 
 # === BEGIN: branch error handling ===
 from ..core.logging import get_logger, log_error_with_context, log_operation_start, log_operation_success, log_operation_failure
@@ -308,3 +314,65 @@ class RAGService:
                 "kb_id": kb_id
             }
         # === END: branch error handling ===
+
+    async def query_knowledge_base_multilingual(
+        self,
+        tenant_id: str,
+        kb_name: str,
+        query: str,
+        chat_history: Optional[List] = None
+    ) -> str:
+        """
+        Multilingual-aware query against a knowledge base.
+        """
+        try:
+            lang_service = get_language_service()
+            question_language = lang_service.detect_language(query)
+            
+            # Use the collection name (resolved by integrating logic)
+            collection_name = get_multilingual_collection_name(tenant_id, kb_name)
+            
+            # Fallback check - if multilingual doesn't exist, use regular
+            from ..services.qdrant_service import get_qdrant_client
+            from ..services.tenant_service import get_tenant_service
+            qdrant_client = get_qdrant_client()
+            tenant_service = get_tenant_service(qdrant_client)
+            
+            if not tenant_service.collection_exists(collection_name):
+                collection_name = tenant_service.get_collection_name(tenant_id, kb_name)
+            
+            # Execute query using shared logic (we can extend execute_query to be language-aware)
+            from ..services.query_service import execute_query, format_docs, get_retriever, get_llm
+            
+            # Retrieve with a slightly larger k for reranking
+            retriever = get_retriever(collection_name, top_k=6)
+            docs = retriever.invoke(query)
+            
+            # Rerank if needed
+            if docs and CROSS_LANGUAGE_ENABLED:
+                scored_docs = []
+                for doc in docs:
+                    doc_lang = doc.metadata.get('language', 'unknown')
+                    boost = SAME_LANGUAGE_BOOST if doc_lang == question_language else 1.0
+                    scored_docs.append((doc, (doc.metadata.get('score', 1.0) * boost)))
+                scored_docs.sort(key=lambda x: x[1], reverse=True)
+                docs = [d for d, s in scored_docs][:3]
+            
+            context = format_docs(docs)
+            llm = get_llm()
+            
+            prompt = f"""You are a helpful multilingual assistant. Based on the context below, answer the user's question in {question_language}.
+
+Context:
+{context}
+
+Question: {query}
+
+Answer:"""
+            
+            response = await llm.ainvoke(prompt)
+            return response.content if hasattr(response, 'content') else str(response)
+            
+        except Exception as e:
+            logger.error(f"Multilingual RAG error: {e}")
+            return f"I encountered an error: {str(e)}"

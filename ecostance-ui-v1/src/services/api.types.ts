@@ -27,6 +27,7 @@ export interface Tenant {
   updated_at?: string | null;
   billing_tier: string;
   billing_status: string;
+  trial_ends_at?: string | null;
   settings?: Record<string, unknown>;
   logo_url?: string | null;
 }
@@ -471,7 +472,8 @@ export interface AgentChatRequest {
 }
 
 export interface AgentChatResponse {
-  response: string;
+  response: any;
+  agent_type?: string;
   session_id: string;
   timestamp: string;
 }

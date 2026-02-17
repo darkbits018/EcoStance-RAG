@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -64,11 +64,11 @@ export default function QuotaManagementPage() {
 
   const getTierColor = (tier: string) => {
     const colors: Record<string, string> = {
-      free: 'border-gray-300 bg-gray-50',
-      pro: 'border-blue-300 bg-blue-50',
-      enterprise: 'border-purple-300 bg-purple-50',
+      free: 'border-gray-500',
+      pro: 'border-blue-500',
+      enterprise: 'border-purple-500',
     };
-    return colors[tier] || 'border-gray-300';
+    return colors[tier] || 'border-gray-500';
   };
 
   return (
@@ -82,11 +82,12 @@ export default function QuotaManagementPage() {
         {templates.map((template) => (
           <Card key={template.tier} className={`p-6 border-2 ${getTierColor(template.tier)}`}>
             <div className="flex justify-between items-start mb-4">
-              <h2 className="text-2xl font-bold capitalize">{template.tier} Tier</h2>
+              <h2 className="text-2xl font-bold capitalize text-text">{template.tier} Tier</h2>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => handleEdit(template)}
+                className="text-text border-border hover:bg-surface-hover"
               >
                 Edit
               </Button>
@@ -94,32 +95,32 @@ export default function QuotaManagementPage() {
 
             <div className="space-y-3">
               <div>
-                <p className="text-sm text-gray-600">Queries per day</p>
-                <p className="text-lg font-semibold">{template.max_queries_per_day.toLocaleString()}</p>
+                <p className="text-sm text-text-secondary">Queries per day</p>
+                <p className="text-lg font-semibold text-text">{template.max_queries_per_day.toLocaleString()}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">Queries per month</p>
-                <p className="text-lg font-semibold">{template.max_queries_per_month.toLocaleString()}</p>
+                <p className="text-sm text-text-secondary">Queries per month</p>
+                <p className="text-lg font-semibold text-text">{template.max_queries_per_month.toLocaleString()}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">Max documents</p>
-                <p className="text-lg font-semibold">
+                <p className="text-sm text-text-secondary">Max documents</p>
+                <p className="text-lg font-semibold text-text">
                   {template.max_documents === -1 ? 'Unlimited' : template.max_documents.toLocaleString()}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">Max storage</p>
-                <p className="text-lg font-semibold">{template.max_storage_gb} GB</p>
+                <p className="text-sm text-text-secondary">Max storage</p>
+                <p className="text-lg font-semibold text-text">{template.max_storage_gb} GB</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">Max knowledge bases</p>
-                <p className="text-lg font-semibold">
+                <p className="text-sm text-text-secondary">Max knowledge bases</p>
+                <p className="text-lg font-semibold text-text">
                   {template.max_knowledge_bases === -1 ? 'Unlimited' : template.max_knowledge_bases}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">Concurrent queries</p>
-                <p className="text-lg font-semibold">{template.max_concurrent_queries}</p>
+                <p className="text-sm text-text-secondary">Concurrent queries</p>
+                <p className="text-lg font-semibold text-text">{template.max_concurrent_queries}</p>
               </div>
             </div>
           </Card>
@@ -129,56 +130,62 @@ export default function QuotaManagementPage() {
       {/* Edit Modal */}
       {editingTier && editForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md p-6 m-4">
-            <h2 className="text-2xl font-bold mb-4 capitalize">Edit {editForm.tier} Tier</h2>
-            
+          <Card className="w-full max-w-md p-6 m-4 bg-surface border-border">
+            <h2 className="text-2xl font-bold mb-4 capitalize text-text">Edit {editForm.tier} Tier</h2>
+
             <div className="space-y-4">
               <div>
-                <Label>Queries per day</Label>
+                <Label className="text-text-secondary">Queries per day</Label>
                 <Input
                   type="number"
                   value={editForm.max_queries_per_day}
                   onChange={(e) => setEditForm({ ...editForm, max_queries_per_day: parseInt(e.target.value) })}
+                  className="bg-background text-text border-border"
                 />
               </div>
               <div>
-                <Label>Queries per month</Label>
+                <Label className="text-text-secondary">Queries per month</Label>
                 <Input
                   type="number"
                   value={editForm.max_queries_per_month}
                   onChange={(e) => setEditForm({ ...editForm, max_queries_per_month: parseInt(e.target.value) })}
+                  className="bg-background text-text border-border"
                 />
               </div>
               <div>
-                <Label>Max documents (-1 for unlimited)</Label>
+                <Label className="text-text-secondary">Max documents (-1 for unlimited)</Label>
                 <Input
                   type="number"
                   value={editForm.max_documents}
                   onChange={(e) => setEditForm({ ...editForm, max_documents: parseInt(e.target.value) })}
+                  className="bg-background text-text border-border"
                 />
               </div>
               <div>
-                <Label>Max storage (GB)</Label>
+                <Label className="text-text-secondary">Max storage (GB)</Label>
                 <Input
                   type="number"
                   value={editForm.max_storage_gb}
                   onChange={(e) => setEditForm({ ...editForm, max_storage_gb: parseInt(e.target.value) })}
+                  className="bg-background text-text border-border"
                 />
               </div>
               <div>
-                <Label>Max knowledge bases (-1 for unlimited)</Label>
+                <Label className="text-text-secondary">Max knowledge bases (-1 for unlimited)</Label>
                 <Input
                   type="number"
                   value={editForm.max_knowledge_bases}
                   onChange={(e) => setEditForm({ ...editForm, max_knowledge_bases: parseInt(e.target.value) })}
+                  className="bg-background text-text border-border"
                 />
               </div>
               <div>
-                <Label>Max concurrent queries</Label>
+                <Label className="text-text-secondary">Max concurrent queries</Label>
                 <Input
                   type="number"
                   value={editForm.max_concurrent_queries}
                   onChange={(e) => setEditForm({ ...editForm, max_concurrent_queries: parseInt(e.target.value) })}
+                  className="bg-background text-text border-border"
                 />
               </div>
             </div>

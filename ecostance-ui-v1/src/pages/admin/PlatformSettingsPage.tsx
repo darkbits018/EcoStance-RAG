@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -74,52 +74,56 @@ export default function PlatformSettingsPage() {
         <p className="text-gray-600 mt-1">Configure platform-wide settings</p>
       </div>
 
-      <Card className="p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">General Settings</h2>
+      <Card className="p-6 bg-surface border-border">
+        <h2 className="text-xl font-bold text-text mb-4">General Settings</h2>
         <div className="space-y-4">
           <div>
-            <Label>Platform Name</Label>
+            <Label className="text-text-secondary">Platform Name</Label>
             <Input
               value={settings.platform_name}
               onChange={(e) => setSettings({ ...settings, platform_name: e.target.value })}
+              className="bg-background text-text border-border"
             />
           </div>
           <div>
-            <Label>Support Email</Label>
+            <Label className="text-text-secondary">Support Email</Label>
             <Input
               type="email"
               value={settings.support_email}
               onChange={(e) => setSettings({ ...settings, support_email: e.target.value })}
+              className="bg-background text-text border-border"
             />
           </div>
         </div>
       </Card>
 
-      <Card className="p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Registration Settings</h2>
+      <Card className="p-6 bg-surface border-border">
+        <h2 className="text-xl font-bold text-text mb-4">Registration Settings</h2>
         <div className="space-y-4">
-          <label className="flex items-center gap-2">
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={settings.allow_registration}
               onChange={(e) =>
                 setSettings({ ...settings, allow_registration: e.target.checked })
               }
+              className="w-4 h-4 rounded border-border bg-background text-primary focus:ring-primary"
             />
-            <span>Allow self-service registration</span>
+            <span className="text-sm text-text">Allow self-service registration</span>
           </label>
-          <label className="flex items-center gap-2">
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={settings.require_email_verification}
               onChange={(e) =>
                 setSettings({ ...settings, require_email_verification: e.target.checked })
               }
+              className="w-4 h-4 rounded border-border bg-background text-primary focus:ring-primary"
             />
-            <span>Require email verification</span>
+            <span className="text-sm text-text">Require email verification</span>
           </label>
           <div>
-            <Label>Default tier for new tenants</Label>
+            <Label className="text-text-secondary mb-1.5 block">Default tier for new tenants</Label>
             <select
               value={settings.default_tier}
               onChange={(e) =>
@@ -128,7 +132,7 @@ export default function PlatformSettingsPage() {
                   default_tier: e.target.value as 'free' | 'pro' | 'enterprise',
                 })
               }
-              className="w-full px-4 py-2 border rounded-md"
+              className="w-full px-4 py-2 bg-background text-text border border-border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
             >
               <option value="free">Free</option>
               <option value="pro">Pro</option>
@@ -138,27 +142,29 @@ export default function PlatformSettingsPage() {
         </div>
       </Card>
 
-      <Card className="p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Security Settings</h2>
+      <Card className="p-6 bg-surface border-border">
+        <h2 className="text-xl font-bold text-text mb-4">Security Settings</h2>
         <div className="space-y-4">
           <div>
-            <Label>JWT Token Expiration (minutes)</Label>
+            <Label className="text-text-secondary">JWT Token Expiration (minutes)</Label>
             <Input
               type="number"
               value={settings.jwt_expiration_minutes}
               onChange={(e) =>
                 setSettings({ ...settings, jwt_expiration_minutes: parseInt(e.target.value) })
               }
+              className="bg-background text-text border-border"
             />
           </div>
           <div>
-            <Label>Max Login Attempts</Label>
+            <Label className="text-text-secondary">Max Login Attempts</Label>
             <Input
               type="number"
               value={settings.max_login_attempts}
               onChange={(e) =>
                 setSettings({ ...settings, max_login_attempts: parseInt(e.target.value) })
               }
+              className="bg-background text-text border-border"
             />
           </div>
         </div>

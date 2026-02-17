@@ -3,7 +3,8 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Label } from '../ui/Label';
-import { X } from 'lucide-react';
+import { X, Mail, Shield, Building, Key } from 'lucide-react';
+import { tenantsAPI } from '../../services/api';
 
 interface CreateTenantModalProps {
   isOpen: boolean;
@@ -29,26 +30,13 @@ export default function CreateTenantModal({ isOpen, onClose, onSuccess }: Create
     setError('');
 
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch('/api/v1/tenants/register', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: formData.name,
-          company: formData.company,
-          email: formData.email,
-          password: formData.password,
-          tier: formData.tier,
-        }),
+      await tenantsAPI.register({
+        name: formData.name,
+        company: formData.company,
+        email: formData.email,
+        password: formData.password,
+        billing_tier: formData.tier,
       });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail || 'Failed to create tenant');
-      }
 
       if (formData.sendEmail) {
         // Optionally send welcome email
@@ -89,13 +77,16 @@ export default function CreateTenantModal({ isOpen, onClose, onSuccess }: Create
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-gray-900">Create New Tenant</h2>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-surface border-border shadow-2xl">
+        <div className="sticky top-0 bg-surface border-b border-border px-6 py-4 flex justify-between items-center z-10">
+          <div>
+            <h2 className="text-2xl font-bold text-text">Create New Tenant</h2>
+            <p className="text-sm text-text-secondary">Provision a new organization and admin account</p>
+          </div>
           <button
             onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-text-secondary hover:text-text transition-colors p-2 hover:bg-surface-hover rounded-full"
             disabled={loading}
           >
             <X className="w-6 h-6" />
@@ -104,14 +95,18 @@ export default function CreateTenantModal({ isOpen, onClose, onSuccess }: Create
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-              {error}
+            <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg flex items-center gap-3">
+              <X className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm font-medium">{error}</p>
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="name">Tenant Name *</Label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="name" className="text-text font-medium flex items-center gap-2">
+                <Building className="w-4 h-4" />
+                Tenant Name *
+              </Label>
               <Input
                 id="name"
                 value={formData.name}
@@ -119,11 +114,15 @@ export default function CreateTenantModal({ isOpen, onClose, onSuccess }: Create
                 placeholder="Acme Corp"
                 required
                 disabled={loading}
+                className="bg-background border-border text-text focus:ring-primary"
               />
             </div>
 
-            <div>
-              <Label htmlFor="company">Company Name *</Label>
+            <div className="space-y-2">
+              <Label htmlFor="company" className="text-text font-medium flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                Company Name *
+              </Label>
               <Input
                 id="company"
                 value={formData.company}
@@ -131,12 +130,16 @@ export default function CreateTenantModal({ isOpen, onClose, onSuccess }: Create
                 placeholder="Acme Corporation"
                 required
                 disabled={loading}
+                className="bg-background border-border text-text focus:ring-primary"
               />
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="email">Admin Email *</Label>
+          <div className="space-y-2">
+            <Label htmlFor="email" className="text-text font-medium flex items-center gap-2">
+              <Mail className="w-4 h-4" />
+              Admin Email *
+            </Label>
             <Input
               id="email"
               type="email"
@@ -145,14 +148,18 @@ export default function CreateTenantModal({ isOpen, onClose, onSuccess }: Create
               placeholder="admin@acme.com"
               required
               disabled={loading}
+              className="bg-background border-border text-text focus:ring-primary"
             />
-            <p className="text-sm text-gray-500 mt-1">
-              This user will receive login credentials
+            <p className="text-xs text-text-secondary">
+              This user will receive login credentials and have full administrative access.
             </p>
           </div>
 
-          <div>
-            <Label htmlFor="password">Admin Password *</Label>
+          <div className="space-y-2">
+            <Label htmlFor="password" className="text-text font-medium flex items-center gap-2">
+              <Key className="w-4 h-4" />
+              Admin Password *
+            </Label>
             <div className="flex gap-2">
               <Input
                 id="password"
@@ -162,28 +169,29 @@ export default function CreateTenantModal({ isOpen, onClose, onSuccess }: Create
                 placeholder="Enter password or generate"
                 required
                 disabled={loading}
-                className="flex-1"
+                className="flex-1 bg-background border-border text-text focus:ring-primary"
               />
               <Button
                 type="button"
                 variant="outline"
                 onClick={generatePassword}
                 disabled={loading}
+                className="border-border hover:bg-surface-hover text-text"
               >
                 Generate
               </Button>
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="tier">Tier *</Label>
+          <div className="space-y-2">
+            <Label htmlFor="tier" className="text-text font-medium">Subscription Tier *</Label>
             <select
               id="tier"
               value={formData.tier}
               onChange={(e) =>
                 setFormData({ ...formData, tier: e.target.value as 'free' | 'pro' | 'enterprise' })
               }
-              className="w-full px-4 py-2 border rounded-md"
+              className="w-full px-4 py-2 border border-border rounded-lg bg-background text-text focus:ring-2 focus:ring-primary focus:outline-none"
               disabled={loading}
             >
               <option value="free">Free - 100 queries/day, 1GB storage</option>
@@ -192,28 +200,33 @@ export default function CreateTenantModal({ isOpen, onClose, onSuccess }: Create
             </select>
           </div>
 
-          <div className="border-t pt-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Initial Quota Settings</h3>
-            <p className="text-sm text-gray-600">
+          <div className="border-t border-border pt-6 mt-4">
+            <h3 className="font-semibold text-text mb-2">Initial Quota Settings</h3>
+            <p className="text-sm text-text-secondary">
               Default quotas will be applied based on the selected tier. You can customize these
-              later from the tenant details page.
+              resource limits later from the tenant details page.
             </p>
           </div>
 
-          <label className="flex items-center gap-2">
+          <label className="flex items-center gap-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={formData.sendEmail}
               onChange={(e) => setFormData({ ...formData, sendEmail: e.target.checked })}
               disabled={loading}
+              className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
             />
-            <span className="text-sm text-gray-700">
+            <span className="text-sm text-text group-hover:text-primary transition-colors">
               Send welcome email with login credentials
             </span>
           </label>
 
-          <div className="flex gap-3 pt-4 border-t">
-            <Button type="submit" disabled={loading} className="flex-1">
+          <div className="flex gap-4 pt-6 border-t border-border mt-6">
+            <Button
+              type="submit"
+              disabled={loading}
+              className="flex-1 bg-primary hover:bg-primary/90 text-white font-semibold py-2"
+            >
               {loading ? 'Creating...' : formData.sendEmail ? 'Create & Send Email' : 'Create Tenant'}
             </Button>
             <Button
@@ -221,7 +234,7 @@ export default function CreateTenantModal({ isOpen, onClose, onSuccess }: Create
               variant="outline"
               onClick={handleClose}
               disabled={loading}
-              className="flex-1"
+              className="flex-1 border-border text-text-secondary hover:text-text hover:bg-surface-hover"
             >
               Cancel
             </Button>

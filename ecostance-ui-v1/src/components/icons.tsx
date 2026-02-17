@@ -58,6 +58,13 @@ import {
   Brain,
   Save,
   FileAudio,
+  ArrowUpCircle,
+  Lock,
+  Truck,
+  ShoppingCart,
+  Leaf,
+  Star,
+  Package,
 } from 'lucide-react';
 
 // Exporting all icons used and potentially useful ones
@@ -127,6 +134,13 @@ export const Icons = {
   Activity: Activity as LucideIcon,
   DollarSign: DollarSign as LucideIcon,
   CreditCard: CreditCard as LucideIcon,
+  ArrowUpCircle: ArrowUpCircle as LucideIcon,
+  Lock: Lock as LucideIcon,
+  Truck: Truck as LucideIcon,
+  ShoppingCart: ShoppingCart as LucideIcon,
+  Leaf: Leaf as LucideIcon,
+  Star: Star as LucideIcon,
+  Package: Package as LucideIcon,
 };
 
 // You can also export individual icons if needed elsewhere

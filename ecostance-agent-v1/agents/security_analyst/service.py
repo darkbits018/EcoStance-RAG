@@ -1,0 +1,234 @@
+"""
+Security Analyst Agent Service
+Handles investigation logic using KB, DB, and SIEM Discovery tools.
+"""
+import logging
+import json
+import re
+from typing import List, Dict, Optional
+import os
+
+from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+from .config import (
+    AGENT_MODEL, GOOGLE_API_KEY, GROQ_API_KEY, 
+    LLM_PROVIDER, AGENT_TEMPERATURE
+)
+
+# Reuse existing generic tools
+from agents.generic_agent.tools.kb_tools import (
+    create_search_knowledge_base_tool,
+    create_list_knowledge_bases_tool
+)
+from agents.generic_agent.tools.db_tools import create_db_query_tool
+
+# Use SIEM Discovery tools
+from .tools.siem_tools import (
+    search_siem_logs, get_log_volume_stats
+)
+
+from app.services.multilingual_utils import MultilingualAgentMixin
+
+logger = logging.getLogger(__name__)
+
+SECURITY_SYSTEM_PROMPTS = {
+    "en": """You are a Senior Security Analyst. Your role is to monitor, investigate, and analyze various data sources including security documentation, system logs, and company reference files.
+You have access to a Knowledge Base containing diverse data: system logs, company policies, SOPs, and even reference lists (like CSV contractor directories). You also have a Database for Asset Inventory.
+
+GUIDELINES:
+1. **Be a Data Detective**: Use the Knowledge Base to find any specific information requested, whether it's a log error, a policy rule, or contact details from an uploaded list.
+2. **Interrogate, Then Answer**: Cross-reference data sources. If you see suspicious activity documented in logs, look up the affected entity in the asset database.
+3. **Be Precise**: Use technical terminology correctly when appropriate, but be helpful with all inquiries. Cite your sources (e.g., "According to the GSA Contractor List in the knowledge base...").
+4. **Respond Professionally**: Maintain an analytical, helpful, and objective tone.
+"""
+}
+
+class SecurityAnalystService(MultilingualAgentMixin):
+    def __init__(self, tenant_id: str = None, company_name: str = "SOC", allowed_tools: List[str] = None, **kwargs):
+        super().__init__(system_prompts=SECURITY_SYSTEM_PROMPTS)
+        
+        if str(LLM_PROVIDER).lower() == "groq":
+            self.llm = ChatGroq(
+                model=AGENT_MODEL,
+                groq_api_key=GROQ_API_KEY,
+                temperature=AGENT_TEMPERATURE
+            )
+        else:
+            self.llm = ChatGoogleGenerativeAI(
+                model=AGENT_MODEL,
+                google_api_key=GOOGLE_API_KEY,
+                temperature=AGENT_TEMPERATURE
+            )
+            
+        self.tenant_id = tenant_id
+        
+        # Initialize basic tools
+        self.tools = [
+            create_search_knowledge_base_tool(tenant_id),
+            create_list_knowledge_bases_tool(tenant_id),
+            search_siem_logs,
+            get_log_volume_stats
+        ]
+        
+        # Only add DB tool if a connection is provided
+        db_conn = kwargs.get('database_connection')
+        if db_conn:
+            self.tools.append(create_db_query_tool(db_conn))
+            
+        self.tool_map = {tool.name: tool for tool in self.tools}
+        self.conversations: Dict[str, List[Dict]] = {}
+
+    def _get_dynamic_system_prompt(self, lang: str = "en"):
+        """Generate system prompt filtered by actually available tools."""
+        base_prompt = SECURITY_SYSTEM_PROMPTS.get(lang, SECURITY_SYSTEM_PROMPTS["en"])
+        
+        tool_details = []
+        if "search_knowledge_base" in self.tool_map:
+            tool_details.append("- search_knowledge_base: ACCESS LOGS & DOCS. Search for system logs, SOPs, security policies, and incident response playbooks.")
+        if "list_available_knowledge_bases" in self.tool_map:
+            tool_details.append("- list_available_knowledge_bases: List the names of all log collections or policy folders available.")
+        if "query_database" in self.tool_map:
+            tool_details.append("- query_database: DB ACCESS. Query the asset inventory or user directory table.")
+
+        return f"""{base_prompt}
+
+### AVAILABLE TOOLS:
+{chr(10).join(tool_details)}
+
+### INVESTIGATION STRATEGY:
+- **IMPORTANT**: If you do not know the exact name of the log collection or knowledge base, you MUST call `list_available_knowledge_bases` first. Do not guess names like 'policies' or use filenames as the `kb_name`.
+- All system logs, task IDs, contractor lists (CSV/XLSX), and policies are stored in the Knowledge Base. Use `search_knowledge_base` to find any information asked by the user once you have the correct collection name.
+- Use `query_database` to look up hardware or user details related to findings in the logs or documents.
+- If the user asks about an external company or vendor, check the Knowledge Base first for any uploaded directories or contractor lists.
+- If `search_knowledge_base` fails with an "Error: Knowledge base '...' does not exist", immediately call `list_available_knowledge_bases` to correct your knowledge and try again.
+"""
+
+    def chat(self, session_id: str, message: str, user_language: str = None, chat_history: List[Dict] = None, **kwargs) -> Dict:
+        try:
+            detected_lang, preferred_lang, confidence = self.get_language_context(
+                message, session_id, user_language
+            )
+
+            if session_id not in self.conversations:
+                self.conversations[session_id] = []
+                # Inject external history if provided (essential for persistence across requests)
+                if chat_history:
+                    self.conversations[session_id].extend(chat_history)
+            
+            self.conversations[session_id].append({"role": "user", "content": message})
+            
+            system_prompt = self._get_dynamic_system_prompt(preferred_lang)
+            tool_descriptions = "\n".join([f"- {t.name}: {t.description}" for t in self.tools])
+            
+            max_iterations = 8
+            iteration = 0
+            
+            while iteration < max_iterations:
+                iteration += 1
+                
+                # Build message list for LangChain
+                lc_messages = [SystemMessage(content=system_prompt)]
+                
+                # Add history from self.conversations (cap at last 10 turns)
+                for msg_entry in self.conversations[session_id][-10:]:
+                    if msg_entry["role"] == "user":
+                        lc_messages.append(HumanMessage(content=msg_entry["content"]))
+                    elif msg_entry["role"] == "assistant":
+                        lc_messages.append(AIMessage(content=msg_entry["content"]))
+                    elif msg_entry["role"] == "system":
+                        lc_messages.append(SystemMessage(content=msg_entry["content"]))
+                import time
+                time.sleep(1) # Add a small delay to respect rate limits
+                # Add instructions for current turn
+                is_last_turn = (iteration == max_iterations)
+                instruction = f"""
+### MANDATORY RESPONSE FORMAT:
+You MUST respond with a valid JSON object only. 
+
+If you need more data (e.g. searching the GSA list), use a tool:
+{{
+    "tool": "tool_name",
+    "args": {{"kb_name": "...", "query": "..."}},
+    "reasoning": "Why I need this"
+}}
+
+If you have found the final answer (e.g. the address) or this is your last turn:
+{{
+    "tool": "none",
+    "response": "Final answer for the user goes here",
+    "type": "text"
+}}
+
+{ "CRITICAL: This is your LAST turn of 8 allowed. You MUST provide the final response in the 'none' tool now. Do not call any other tools." if is_last_turn else f"Turn {iteration}/{max_iterations}. If previous search failed, use 'list_available_knowledge_bases' immediately." }
+"""
+                lc_messages.append(SystemMessage(content=instruction))
+                
+                logger.info(f"Security Analyst iteration {iteration} sending to LLM")
+                result = self.llm.invoke(lc_messages)
+                text = result.content
+                logger.info(f"LLM Response received ({len(text)} chars)")
+                
+                match = re.search(r'\{.*\}', text, re.DOTALL)
+                if not match:
+                    # Non-JSON response: treating as final
+                    final_text = text
+                    self.conversations[session_id].append({"role": "assistant", "content": final_text})
+                    return {"response": final_text, "session_id": session_id, "language": preferred_lang, "success": True}
+
+                try:
+                    decision = json.loads(match.group(0))
+                except json.JSONDecodeError:
+                    final_text = text
+                    self.conversations[session_id].append({"role": "assistant", "content": final_text})
+                    return {"response": final_text, "session_id": session_id, "success": True}
+
+                tool_name = decision.get('tool')
+                
+                if tool_name == 'none' or not tool_name or is_last_turn:
+                    final_text = decision.get('response', decision.get('reasoning', text))
+                    self.conversations[session_id].append({"role": "assistant", "content": final_text})
+                    return {"response": final_text, "session_id": session_id, "language": preferred_lang, "success": True}
+                
+                if tool_name in self.tool_map:
+                    args = decision.get('args', {})
+                    logger.info(f"Executing {tool_name} with {args}")
+                    try:
+                        tool_result = self.tool_map[tool_name].invoke(args)
+                        # Add tool result as system message and loop
+                        self.conversations[session_id].append({
+                            "role": "system", 
+                            "content": f"Result for {tool_name}({args}): {str(tool_result)}"
+                        })
+                    except Exception as te:
+                        logger.error(f"Tool error: {te}")
+                        self.conversations[session_id].append({
+                            "role": "system", 
+                            "content": f"Error executing {tool_name}: {str(te)}"
+                        })
+                else:
+                    self.conversations[session_id].append({
+                        "role": "system", 
+                        "content": f"Error: Tool {tool_name} is not available."
+                    })
+
+            # Exhausted iterations
+            final_text = "I've analyzed the available sources but could not find a definitive answer. Please provide more clues or try a different query."
+            self.conversations[session_id].append({"role": "assistant", "content": final_text})
+            return {"response": final_text, "session_id": session_id, "language": preferred_lang, "success": True}
+            
+        except Exception as e:
+            logger.error(f"Security Analyst Error: {e}")
+            return {"response": "An internal error occurred during analysis.", "session_id": session_id, "success": False}
+
+    def get_conversation_history(self, session_id: str) -> List[Dict]:
+        return self.conversations.get(session_id, [])
+
+    def reset_conversation(self, session_id: str) -> bool:
+        """Reset the conversation history for a specific session."""
+        if session_id in self.conversations:
+            del self.conversations[session_id]
+            logger.info(f"Resetting conversation for session: {session_id}")
+            return True
+        return False

@@ -30,6 +30,8 @@ import PlatformSettingsPage from './pages/admin/PlatformSettingsPage';
 import GmailCallbackPage from './pages/GmailCallbackPage';
 import UserManagementPage from './pages/UserManagementPage';
 import SetPasswordPage from './pages/SetPasswordPage';
+import PaymentSuccessPage from './pages/billing/PaymentSuccessPage';
+import PaymentCancelPage from './pages/billing/PaymentCancelPage';
 import { AuthProvider, useAuth } from './context/AuthContext.v2';
 import { Icons } from './components/icons';
 
@@ -52,42 +54,19 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 // SuperAdminRoute component for super admin only pages
 // This doesn't use AuthContext - it checks localStorage directly
 const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
-  const [isChecking, setIsChecking] = React.useState(true);
-  const [isAuthorized, setIsAuthorized] = React.useState(false);
+  const { user, isAuthLoading } = useAuth();
 
-  React.useEffect(() => {
-    // Check if user is logged in as super admin
-    const token = localStorage.getItem('access_token');
-    const userStr = localStorage.getItem('user');
-
-    if (!token || !userStr) {
-      setIsAuthorized(false);
-      setIsChecking(false);
-      return;
-    }
-
-    try {
-      const user = JSON.parse(userStr);
-      // Check if user is super admin (either by role or tenant_id)
-      const isSuperAdmin =
-        user.role === 'super_admin' ||
-        user.role === 'admin' ||
-        user.tenant_id === 'platform-admin-tenant-id';
-
-      setIsAuthorized(isSuperAdmin);
-    } catch (error) {
-      console.error('Error parsing user data:', error);
-      setIsAuthorized(false);
-    }
-
-    setIsChecking(false);
-  }, []);
-
-  if (isChecking) {
+  if (isAuthLoading) {
     return <div className="flex justify-center items-center h-screen w-full"><Icons.Spinner className="h-10 w-10 animate-spin text-primary" /></div>;
   }
 
-  if (!isAuthorized) {
+  // Check if user is super admin
+  const isSuperAdmin =
+    user?.role === 'super_admin' ||
+    user?.role === 'admin' ||
+    user?.tenantId === 'platform-admin-tenant-id';
+
+  if (!user || !isSuperAdmin) {
     return <Navigate to="/admin/login" replace />;
   }
 
@@ -148,6 +127,8 @@ function App() {
             <Route path="admin/public-chat" element={<AdminPublicChatPage />} />
             <Route path="admin/public-agent" element={<AdminPublicAgentPage />} />
             <Route path="gmail/callback" element={<GmailCallbackPage />} />
+            <Route path="billing/success" element={<PaymentSuccessPage />} />
+            <Route path="billing/cancel" element={<PaymentCancelPage />} />
             <Route
               path="admin/dashboard"
               element={

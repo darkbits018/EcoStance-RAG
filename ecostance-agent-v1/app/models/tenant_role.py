@@ -21,12 +21,12 @@ class TenantRole(Base):
     description = Column(String(500))
     permissions = Column(JSON, default=list)  # List of permission strings
     is_active = Column(Boolean, default=True)
-    created_by = Column(String(36), ForeignKey("tenant_users.id"), nullable=False)
+    created_by = Column(String(36), ForeignKey("tenant_users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    tenant = relationship("Tenant")
+    tenant = relationship("Tenant", back_populates="roles")
     creator = relationship("TenantUser", foreign_keys=[created_by], post_update=True)
     users = relationship("TenantUser", foreign_keys="TenantUser.tenant_role_id", back_populates="tenant_role")
     

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Server, Database, Cpu, AlertTriangle } from 'lucide-react';
@@ -73,23 +73,23 @@ export default function SystemHealthPage() {
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <Server className="w-8 h-8 text-blue-600" />
-              <h2 className="text-xl font-bold">API Server</h2>
+              <Server className="w-8 h-8 text-blue-400" />
+              <h2 className="text-xl font-bold text-text">API Server</h2>
             </div>
             {getStatusBadge(health?.api_status || 'offline')}
           </div>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-gray-600">Uptime</span>
-              <span className="font-medium">{health?.api_uptime.toFixed(1)}%</span>
+              <span className="text-text-secondary">Uptime</span>
+              <span className="font-medium text-text">{health?.api_uptime.toFixed(1)}%</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Response Time</span>
-              <span className="font-medium">{health?.api_response_time}ms avg</span>
+              <span className="text-text-secondary">Response Time</span>
+              <span className="font-medium text-text">{health?.api_response_time}ms avg</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Requests/min</span>
-              <span className="font-medium">{health?.api_requests_per_min.toLocaleString()}</span>
+              <span className="text-text-secondary">Requests/min</span>
+              <span className="font-medium text-text">{health?.api_requests_per_min.toLocaleString()}</span>
             </div>
           </div>
         </Card>
@@ -97,25 +97,25 @@ export default function SystemHealthPage() {
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <Database className="w-8 h-8 text-purple-600" />
-              <h2 className="text-xl font-bold">PostgreSQL</h2>
+              <Database className="w-8 h-8 text-purple-400" />
+              <h2 className="text-xl font-bold text-text">PostgreSQL</h2>
             </div>
             {getStatusBadge(health?.database_status || 'offline')}
           </div>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-gray-600">Connections</span>
-              <span className="font-medium">
+              <span className="text-text-secondary">Connections</span>
+              <span className="font-medium text-text">
                 {health?.database_connections}/{health?.database_max_connections}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Query Time</span>
-              <span className="font-medium">{health?.database_query_time}ms avg</span>
+              <span className="text-text-secondary">Query Time</span>
+              <span className="font-medium text-text">{health?.database_query_time}ms avg</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Storage</span>
-              <span className="font-medium">
+              <span className="text-text-secondary">Storage</span>
+              <span className="font-medium text-text">
                 {health?.database_storage_gb.toFixed(1)}/{health?.database_storage_limit_gb} GB
               </span>
             </div>
@@ -125,23 +125,23 @@ export default function SystemHealthPage() {
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <Cpu className="w-8 h-8 text-green-600" />
-              <h2 className="text-xl font-bold">Qdrant</h2>
+              <Cpu className="w-8 h-8 text-green-400" />
+              <h2 className="text-xl font-bold text-text">Qdrant</h2>
             </div>
             {getStatusBadge(health?.qdrant_status || 'offline')}
           </div>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-gray-600">Collections</span>
-              <span className="font-medium">{health?.qdrant_collections}</span>
+              <span className="text-text-secondary">Collections</span>
+              <span className="font-medium text-text">{health?.qdrant_collections}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Vectors</span>
-              <span className="font-medium">{(health?.qdrant_vectors || 0).toLocaleString()}</span>
+              <span className="text-text-secondary">Vectors</span>
+              <span className="font-medium text-text">{(health?.qdrant_vectors || 0).toLocaleString()}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Memory</span>
-              <span className="font-medium">
+              <span className="text-text-secondary">Memory</span>
+              <span className="font-medium text-text">
                 {health?.qdrant_memory_gb.toFixed(1)}/{health?.qdrant_memory_limit_gb} GB
               </span>
             </div>
@@ -151,19 +151,19 @@ export default function SystemHealthPage() {
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <AlertTriangle className="w-8 h-8 text-orange-600" />
-              <h2 className="text-xl font-bold">Background Jobs</h2>
+              <AlertTriangle className="w-8 h-8 text-orange-400" />
+              <h2 className="text-xl font-bold text-text">Background Jobs</h2>
             </div>
             {getStatusBadge(health?.background_jobs_status || 'stopped')}
           </div>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-gray-600">Active Jobs</span>
-              <span className="font-medium">{health?.active_jobs}</span>
+              <span className="text-text-secondary">Active Jobs</span>
+              <span className="font-medium text-text">{health?.active_jobs}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Failed (24h)</span>
-              <span className="font-medium text-red-600">{health?.failed_jobs_24h}</span>
+              <span className="text-text-secondary">Failed (24h)</span>
+              <span className="font-medium text-red-400">{health?.failed_jobs_24h}</span>
             </div>
           </div>
         </Card>

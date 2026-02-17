@@ -32,7 +32,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/health",
         "/api/v1/system/health",
         "/api/v1/auth/login",
-        "/api/v1/auth/register"
+        "/api/v1/auth/register",
+        "/api/v1/tenants/register",
+        "/api/v1/billing/webhooks/stripe",
+        "/api/v1/billing/webhooks/razorpay"
     ]
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

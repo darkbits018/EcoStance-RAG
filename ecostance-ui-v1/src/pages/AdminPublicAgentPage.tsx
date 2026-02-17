@@ -20,9 +20,11 @@ interface DatabaseConnection {
 
 interface PublicAgentConfig {
   enabled: boolean;
+  agent_type: string;
   allowed_kbs: string[];
   allowed_dbs: string[];
   welcome_message: string;
+  system_prompt?: string;
   suggested_questions: string[];
   branding: {
     logo_url?: string;
@@ -42,6 +44,35 @@ interface PublicAgentConfig {
   };
 }
 
+const PERSONA_CONFIG: Record<string, { label: string; icon: any; description: string }> = {
+  security_analyst: {
+    label: 'SOC Assistant',
+    icon: Icons.Shield,
+    description: 'Expert in log discovery, security events, and threat analysis'
+  },
+  quickship: {
+    label: 'Logistics Support',
+    icon: Icons.Truck || Icons.Package,
+    description: 'Specialized in shipment tracking, logistics, and supply chain'
+  },
+  ecommerce: {
+    label: 'Shopping Assistant',
+    icon: Icons.ShoppingCart || Icons.LayoutGrid,
+    description: 'Expert in product discovery and e-commerce support'
+  },
+  ecostance: {
+    label: 'Sustainability Expert',
+    icon: Icons.Leaf || Icons.Activity,
+    description: 'Focused on environmental impact and carbon offsets'
+  },
+  generic: {
+    label: 'AI Assistant',
+    icon: Icons.Sparkles,
+    description: 'General-purpose AI assistant with access to your data'
+  }
+};
+
+
 const AdminPublicAgentPage: React.FC = () => {
   const [config, setConfig] = useState<PublicAgentConfig | null>(null);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
@@ -60,26 +91,26 @@ const AdminPublicAgentPage: React.FC = () => {
           publicAgentAPI.admin.getConfig(),
           publicAgentAPI.admin.getAvailableKBs(),
           publicAgentAPI.admin.getAvailableDBs(),
-        ]);
-        
+        ]) as any;
+
         console.log('[AdminPublicAgentPage] Config data:', configData);
         console.log('[AdminPublicAgentPage] KBs data:', kbsData);
         console.log('[AdminPublicAgentPage] DBs data:', dbsData);
-        
+
         setConfig(configData as any);
-        
-        const transformedKBs: KnowledgeBase[] = Array.isArray(kbsData) 
+
+        const transformedKBs: KnowledgeBase[] = Array.isArray(kbsData)
           ? (kbsData as any[]).map((kb: any) => {
-              if (typeof kb === 'string') {
-                return { kb_name: kb, document_count: 0 };
-              }
-              return {
-                kb_name: kb.kb_name || kb.name || String(kb),
-                document_count: kb.document_count || kb.documents?.length || 0,
-              };
-            })
+            if (typeof kb === 'string') {
+              return { kb_name: kb, document_count: 0 };
+            }
+            return {
+              kb_name: kb.kb_name || kb.name || String(kb),
+              document_count: kb.document_count || kb.documents?.length || 0,
+            };
+          })
           : [];
-        
+
         console.log('[AdminPublicAgentPage] Transformed KBs:', transformedKBs);
         setKnowledgeBases(transformedKBs);
         setDatabases(Array.isArray(dbsData) ? dbsData : []);
@@ -133,19 +164,19 @@ const AdminPublicAgentPage: React.FC = () => {
 
   const handleSave = async () => {
     if (!config) return;
-    
+
     console.log('[AdminPublicAgentPage] Saving config:', config);
     console.log('[AdminPublicAgentPage] Current allowed_kbs:', config.allowed_kbs);
-    
+
     setIsSaving(true);
     setSaveStatus('idle');
-    
+
     try {
       const result = await publicAgentAPI.admin.updateConfig(config);
       console.log('[AdminPublicAgentPage] Save result:', result);
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), 3000);
-      
+
       // Refresh the configuration to ensure we have the latest state
       console.log('[AdminPublicAgentPage] Refreshing config after save...');
       const updatedConfig = await publicAgentAPI.admin.getConfig();
@@ -188,7 +219,11 @@ const AdminPublicAgentPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="p-2 bg-primary/10 rounded-lg">
-                <Icons.Brain className="h-6 w-6 text-primary" />
+                {(() => {
+                  const persona = PERSONA_CONFIG[config.agent_type] || PERSONA_CONFIG.generic;
+                  const Icon = persona.icon;
+                  return <Icon className="h-6 w-6 text-primary" />;
+                })()}
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-text">Public AI Agent</h1>
@@ -231,6 +266,35 @@ const AdminPublicAgentPage: React.FC = () => {
 
           {/* Left Column - Main Settings */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Persona Info Card */}
+            {config.agent_type && (
+              <Card className="bg-surface border-border overflow-hidden">
+                <div className="bg-primary/5 p-4 border-b border-border">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {(() => {
+                        const persona = PERSONA_CONFIG[config.agent_type] || PERSONA_CONFIG.generic;
+                        const Icon = persona.icon;
+                        return <Icon className="h-5 w-5 text-primary" />;
+                      })()}
+                      <div>
+                        <p className="text-sm font-bold text-text uppercase tracking-wider">Active Persona</p>
+                        <p className="text-xs text-text-secondary">Managed by Super Admin</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="bg-background border-primary/20 text-primary">
+                      {PERSONA_CONFIG[config.agent_type]?.label || config.agent_type.replace(/_/g, ' ')}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="p-4 bg-background/50">
+                  <p className="text-sm text-text-secondary italic">
+                    "{PERSONA_CONFIG[config.agent_type]?.description || PERSONA_CONFIG.generic.description}"
+                  </p>
+                </div>
+              </Card>
+            )}
+
             {/* Status Card */}
             <Card className="bg-surface border-border">
               <CardContent className="p-6">
@@ -258,6 +322,7 @@ const AdminPublicAgentPage: React.FC = () => {
                 </div>
               </CardContent>
             </Card>
+
 
             {/* Features Card */}
             <Card className="bg-surface border-border">

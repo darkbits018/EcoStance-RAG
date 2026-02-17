@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react';
 import { adminAPI, tenantsAPI } from '../services/api';
-import type { 
-  SystemHealth, 
-  DashboardSummary, 
+import type {
+  SystemHealth,
+  DashboardSummary,
   TenantSearchResult,
   TenantStorage,
   TenantActivity,
@@ -120,11 +120,11 @@ export function useAdmin() {
     }
   }, []);
 
-  const suspendTenant = useCallback(async (tenantId: string, reason: string) => {
+  const suspendTenant = useCallback(async (tenantId: string) => {
     try {
       setLoading(true);
       setError(null);
-      return await adminAPI.suspendTenant(tenantId, reason);
+      return await tenantsAPI.deactivateTenant(tenantId);
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to suspend tenant');
       setError(error);
@@ -138,7 +138,7 @@ export function useAdmin() {
     try {
       setLoading(true);
       setError(null);
-      return await adminAPI.reactivateTenant(tenantId);
+      return await tenantsAPI.activateTenant(tenantId);
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to reactivate tenant');
       setError(error);
@@ -150,13 +150,14 @@ export function useAdmin() {
 
   const deleteTenant = useCallback(async (
     tenantId: string,
-    softDelete = true,
-    confirm = true
+    softDelete = true
   ) => {
     try {
       setLoading(true);
       setError(null);
-      return await adminAPI.deleteTenant(tenantId, softDelete, confirm);
+      // Map softDelete toggle to hardDelete param in tenantsAPI
+      const hardDelete = !softDelete;
+      return await tenantsAPI.deleteTenant(tenantId, hardDelete);
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to delete tenant');
       setError(error);

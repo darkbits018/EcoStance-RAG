@@ -4,6 +4,7 @@ import { Icons } from './icons';
 import { Button } from './ui/Button';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext.v2';
+import { TrialBanner } from './TrialBanner';
 
 // Logout Button Component
 const LogoutButton: React.FC<{ isSidebarOpen: boolean }> = ({ isSidebarOpen }) => {
@@ -50,7 +51,10 @@ const LogoutButton: React.FC<{ isSidebarOpen: boolean }> = ({ isSidebarOpen }) =
 const SidebarLayout: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Default to open
   const location = useLocation();
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { user, trialEndsAt, billingTier } = useAuth();
+
+  const isExpired = !!trialEndsAt && billingTier === 'free' && new Date(trialEndsAt).getTime() <= new Date().getTime();
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -108,14 +112,20 @@ const SidebarLayout: React.FC = () => {
           {sidebarItems.map((item) => (
             <NavLink
               key={item.path}
-              to={item.path}
+              to={isExpired && item.path !== '/settings' ? '#' : item.path}
+              onClick={(e) => {
+                if (isExpired && item.path !== '/settings') {
+                  e.preventDefault();
+                }
+              }}
               className={({ isActive }) =>
                 cn(
                   'flex items-center p-3 rounded-md transition-colors duration-200',
                   isActive
                     ? 'bg-primary text-white shadow-sm'
                     : 'text-text-secondary hover:bg-surface-hover hover:text-text',
-                  isSidebarOpen ? 'justify-start' : 'justify-center' // Center items when collapsed
+                  isSidebarOpen ? 'justify-start' : 'justify-center', // Center items when collapsed
+                  isExpired && item.path !== '/settings' && 'opacity-50 cursor-not-allowed grayscale'
                 )
               }
             >
@@ -142,36 +152,62 @@ const SidebarLayout: React.FC = () => {
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <div
         className={cn(
-          'flex-1 transition-all duration-300 ease-in-out',
+          'flex-1 transition-all duration-300 ease-in-out flex flex-col',
           isSidebarOpen ? 'ml-64' : 'ml-20'
         )}
       >
-        <header className="h-16 flex items-center justify-between px-6 border-b border-border bg-surface">
-          <div className="flex items-center">
-            {!isSidebarOpen && (
-              <Button variant="ghost" size="icon" onClick={toggleSidebar} className="mr-4 hover:bg-transparent">
-                <Icons.ChevronRight className="h-5 w-5 text-text-secondary" />
+        <div className="sticky top-0 z-30 w-full">
+          <header className="h-16 flex items-center justify-between px-6 border-b border-border bg-surface/95 backdrop-blur-sm">
+            <div className="flex items-center">
+              {!isSidebarOpen && (
+                <Button variant="ghost" size="icon" onClick={toggleSidebar} className="mr-4 hover:bg-transparent">
+                  <Icons.ChevronRight className="h-5 w-5 text-text-secondary" />
+                </Button>
+              )}
+              <h1 className="text-lg font-semibold text-primary">{currentPageTitle}</h1>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Button variant="ghost" size="icon">
+                <Icons.Search className="h-5 w-5 text-text-secondary" />
               </Button>
-            )}
-            <h1 className="text-lg font-semibold text-primary">{currentPageTitle}</h1>
-          </div>
-          <div className="flex items-center space-x-3">
-            <Button variant="ghost" size="icon">
-              <Icons.Search className="h-5 w-5 text-text-secondary" />
-            </Button>
-            <Button variant="ghost" size="icon">
-              <Icons.Bell className="h-5 w-5 text-text-secondary" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => { /* Handle profile click */ }}>
-              <Icons.User className="h-5 w-5 text-text-secondary" />
-            </Button>
-          </div>
-        </header>
-        <main className="p-6">
-          <Outlet /> {/* Render the page content here */}
+              <Button variant="ghost" size="icon">
+                <Icons.Bell className="h-5 w-5 text-text-secondary" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => { /* Handle profile click */ }}>
+                <Icons.User className="h-5 w-5 text-text-secondary" />
+              </Button>
+            </div>
+          </header>
+          <TrialBanner />
+        </div>
+        <main className="p-6 relative">
+          {isExpired ? (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8 bg-surface/50 backdrop-blur-[2px] rounded-xl border border-border">
+              <div className="w-20 h-20 bg-error/10 rounded-full flex items-center justify-center mb-6">
+                <Icons.AlertCircle className="w-10 h-10 text-error" />
+              </div>
+              <h2 className="text-3xl font-bold text-text mb-4">Trial Has Expired</h2>
+              <p className="text-text-secondary max-w-md mb-8 text-lg">
+                Your account is currently locked because your trial period has ended.
+                Please upgrade to a paid plan to restore access to your data and features.
+              </p>
+              <div className="flex gap-4">
+                <Button
+                  size="lg"
+                  onClick={() => navigate('/settings?tab=billing')}
+                  className="bg-primary hover:bg-primary/90 text-white px-8 font-bold"
+                >
+                  <Icons.ArrowUpCircle className="w-5 h-5 mr-2" />
+                  Upgrade Plan
+                </Button>
+                <LogoutButton isSidebarOpen={true} />
+              </div>
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </main>      </div>
     </div>
   );

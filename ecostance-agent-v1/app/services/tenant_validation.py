@@ -116,7 +116,9 @@ class TenantValidationService:
             "name": tenant.name,
             "is_active": tenant.is_active,
             "settings": tenant.settings,
-            "created_at": tenant.created_at
+            "created_at": tenant.created_at,
+            "billing_tier": tenant.billing_tier,
+            "trial_ends_at": tenant.trial_ends_at
         }
         self._add_to_cache(tenant_id, tenant_data)
         
@@ -125,6 +127,7 @@ class TenantValidationService:
     def validate_tenant_active(self, tenant_id: str, db: Session) -> Tenant:
         """
         Check if tenant exists and is active.
+        Also checks if trial has expired for free tier tenants.
         
         Args:
             tenant_id: Tenant ID to validate
@@ -134,7 +137,7 @@ class TenantValidationService:
             Tenant object
             
         Raises:
-            HTTPException: If tenant not found or inactive
+            HTTPException: If tenant not found, inactive, or trial expired
         """
         tenant = self.validate_tenant_exists(tenant_id, db)
         
@@ -143,6 +146,16 @@ class TenantValidationService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Tenant {tenant_id} is inactive"
+            )
+        
+        # Check trial expiration
+        if (getattr(tenant, 'billing_tier', 'free_trial') in ['free', 'free_trial'] and 
+            getattr(tenant, 'trial_ends_at', None) and 
+            datetime.utcnow() > tenant.trial_ends_at):
+            logger.warning(f"Tenant trial expired: {tenant_id}")
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=f"Trial period for tenant {tenant_id} has expired. Please upgrade to continue."
             )
         
         return tenant

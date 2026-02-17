@@ -11,7 +11,6 @@ import { RefreshCw } from 'lucide-react';
 
 interface GmailSettingsProps {
     tenant: any;
-    onRefresh: () => Promise<void>;
 }
 
 export default function GmailSettings({ tenant }: GmailSettingsProps) {
@@ -21,10 +20,6 @@ export default function GmailSettings({ tenant }: GmailSettingsProps) {
     });
     const [isLoadingStatus, setIsLoadingStatus] = useState(true);
     const [isVerifying, setIsVerifying] = useState(false);
-
-    // Determine effective connection status
-    const connected = propsConnected || isVerifiedConnected;
-    const connectedEmail = gmailConfig.connected_email || (isVerifiedConnected ? 'Gmail Account' : null);
 
     useEffect(() => {
         // Explicitly clear status when switching tenants to avoid "trailing" stale state
@@ -71,7 +66,6 @@ export default function GmailSettings({ tenant }: GmailSettingsProps) {
     return (
         <div className="space-y-6">
             <Card className="p-6 bg-surface border-border">
-                {/* ... existing header code ... */}
                 <div className="flex items-start justify-between">
                     <div className="flex gap-4">
                         <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
@@ -101,16 +95,6 @@ export default function GmailSettings({ tenant }: GmailSettingsProps) {
                                 <Button variant="ghost" size="sm" onClick={verifyConnection} title="Refresh Status" disabled={isLoadingStatus || isVerifying}>
                                     <RefreshCw className={`w-4 h-4 text-text-secondary ${(isLoadingStatus || isVerifying) ? 'animate-spin' : ''}`} />
                                 </Button>
-                            </div>
-                            {/* Debug Info */}
-                            <div className="mt-2 text-xs text-text-secondary">
-                                <p>Config Status: {connected ? 'Active' : 'Inactive'}</p>
-                                <details>
-                                    <summary className="cursor-pointer hover:text-text">Raw Config</summary>
-                                    <pre className="mt-1 p-2 bg-background rounded border border-border overflow-auto">
-                                        {JSON.stringify(gmailConfig, null, 2)}
-                                    </pre>
-                                </details>
                             </div>
                         </div>
                     </div>
