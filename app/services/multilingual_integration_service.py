@@ -52,9 +52,12 @@ class MultilingualIntegrationService:
         return clean_and_enrich_blocks_multilingual
     
     def get_agent_service(self, tenant_id: str = None, **kwargs):
-        """Get multilingual agent service - no fallback to legacy."""
-        from agents.quickship_agent.multilingual_agent_service import MultilingualAgentService
-        return MultilingualAgentService(tenant_id=tenant_id, **kwargs)
+        """
+        Agent service retrieval should be handled by the specific agent router or factory.
+        Removing direct import from agents.quickship_agent to avoid interdependency.
+        """
+        logger.warning("get_agent_service called on MultilingualIntegrationService. This should be handled by the agent's own service.")
+        return None
     
     def process_file_with_best_service(self, file_path: str, collection_name: str, 
                                      tenant_id: str = None, **kwargs):

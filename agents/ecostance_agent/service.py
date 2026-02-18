@@ -16,8 +16,7 @@ from .tools.shopping_tools import search_eco_products, get_eco_impact_summary
 from .tools.kb_tools import create_ecostance_kb_tools
 
 # Shared tools from the platform
-from agents.quickship_agent.tools.database_tools import TOOL_CATEGORIES
-from agents.quickship_agent.tools.knowledge_base_tools import (
+from app.tools.shared_tools import (
     create_search_knowledge_base_tool,
     create_list_knowledge_bases_tool
 )
@@ -59,10 +58,10 @@ class EcoStanceAgentService(MultilingualAgentMixin):
     def __init__(self, tenant_id: str = None, allowed_tools: List[str] = None, **kwargs):
         super().__init__(system_prompts=ECOSTANCE_SYSTEM_PROMPTS)
         
-        if LLM_PROVIDER == "groq":
+        if str(LLM_PROVIDER).lower() == "groq":
             self.llm = ChatGroq(
+                model=AGENT_MODEL,
                 groq_api_key=GROQ_API_KEY,
-                model_name=AGENT_MODEL,
                 temperature=AGENT_TEMPERATURE
             )
         else:
@@ -96,10 +95,6 @@ class EcoStanceAgentService(MultilingualAgentMixin):
                 create_list_knowledge_bases_tool(self.tenant_id)
             ])
             
-        # Add Database tools
-        for category in ["tracking", "payments", "complaints", "delivery_estimates"]:
-            if category in requested_tools and category in TOOL_CATEGORIES:
-                self.tools.extend(TOOL_CATEGORIES[category])
             
         self.tool_map = {tool.name: tool for tool in self.tools}
         self.conversations: Dict[str, List[Dict]] = {}

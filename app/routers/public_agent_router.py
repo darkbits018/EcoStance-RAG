@@ -187,6 +187,7 @@ async def chat_with_public_agent(
         from agents.ecommerce_agent.service import EcommerceAgentService
         from agents.generic_agent.service import GenericAgentService
         from agents.ecostance_agent.service import EcoStanceAgentService
+        from agents.security_analyst.service import SecurityAnalystService
         
         # Mapping of agent types to service classes
         AGENT_MAPPING = {
@@ -194,6 +195,7 @@ async def chat_with_public_agent(
             "ecommerce": EcommerceAgentService,
             "generic": GenericAgentService,
             "ecostance": EcoStanceAgentService,
+            "security_analyst": SecurityAnalystService,
         }
         
         # Determine agent type: Request override > Config
@@ -231,13 +233,24 @@ async def chat_with_public_agent(
             logger.warning(f"Tenant {tenant_id} attempted to use unauthorized DB: {db_connection}")
             db_connection = allowed_dbs[0] if allowed_dbs else None
 
+        # Fetch persisted history for context
+        # Note: service.add_message just added the current user message to DB
+        # We fetch all, and exclude the very last one (current) to avoid duplication in agent's internal list
+        full_history = service.get_session_messages(request_data.session_id, tenant_id)
+        chat_history = []
+        if full_history:
+            # Exclude current message (last one) as agent.chat adds it manually
+            for msg in full_history[:-1]:
+                chat_history.append({"role": msg.role, "content": msg.content})
+
         # Call the agent with multilingual support
         agent_response = agent.chat(
             session_id=request_data.session_id,
             message=request_data.message,
             knowledge_base=kb_name,
             database_connection=db_connection,
-            user_language=request_data.user_language
+            user_language=request_data.user_language,
+            chat_history=chat_history
         )
         
         response_text = agent_response.get("response", "I'm sorry, I couldn't process your request.")
@@ -261,6 +274,7 @@ async def chat_with_public_agent(
             response=response_text,
             sources=[],
             tool_used=tool_used,
+            agent_type=target_agent_type,
             session_id=request_data.session_id,
             timestamp=datetime.utcnow().isoformat()
         )
@@ -273,6 +287,7 @@ async def chat_with_public_agent(
             response="I'm sorry, I encountered an error while processing your message. Please try again.",
             sources=[],
             tool_used=None,
+            agent_type=request_data.agent_type or "unknown",
             session_id=request_data.session_id,
             timestamp=datetime.utcnow().isoformat()
         )
@@ -330,7 +345,8 @@ async def get_public_agent_config(
             suggested_questions=config_dict["suggested_questions"],
             branding=BrandingConfig(**config_dict["branding"]),
             rate_limit=RateLimitConfig(**config_dict["rate_limit"]),
-            features=FeaturesConfig(**config_dict["features"])
+            features=FeaturesConfig(**config_dict["features"]),
+            agent_type=config_dict.get("agent_type", "quickship")
         )
         
     except Exception as e:
@@ -759,9 +775,89 @@ async def get_available_tools(
                 "name": "Complaint Status",
                 "description": "Check complaint status for shipments",
                 "functions": ["get_complaint_status"]
+            },
+            {
+                "id": "certificates",
+                "name": "Eco-Certificates",
+                "description": "Search and verify carbon offset certificates",
+                "functions": ["search_certificates", "get_certificate_details"]
+            },
+            {
+                "id": "shopping",
+                "name": "Eco-Shopping",
+                "description": "Search for sustainable products and projects",
+                "functions": ["search_eco_products", "get_product_details"]
+            },
+            {
+                "id": "impact",
+                "name": "Impact Analytics",
+                "description": "View environmental impact statistics and achievements",
+                "functions": ["get_impact_stats", "get_user_achievements"]
+            },
+            {
+                "id": "faq",
+                "name": "Knowledge Base / FAQ",
+                "description": "Search internal documentation and FAQs",
+                "functions": ["search_faq", "search_knowledge_base"]
+            },
+            {
+                "id": "siem",
+                "name": "Log Discovery (SIEM)",
+                "description": "Search and analyze security logs from SIEM",
+                "functions": ["search_siem_logs", "get_log_volume_stats"]
             }
         ]
     }
+
+
+@router.get(
+    "/api/v1/admin/public-agent/available-agents",
+    dependencies=[Depends(require_admin)],
+    tags=["Public Agent Admin"]
+)
+async def get_available_agents(
+    current_user: TenantUser = Depends(get_current_user)
+):
+    """
+    Get list of available agent types that can be assigned to the tenant.
+    
+    Requires admin or super_admin role.
+    """
+    return {
+        "agents": [
+            {
+                "id": "quickship",
+                "name": "QuickShip Logistics Agent",
+                "description": "Specialized in shipment tracking, delivery estimates, and logistics support.",
+                "category": "logistics"
+            },
+            {
+                "id": "ecommerce",
+                "name": "E-Commerce Assistant",
+                "description": "Handles product searches, order history, and general shopping assistance.",
+                "category": "retail"
+            },
+            {
+                "id": "ecostance",
+                "name": "EcoStance Sustainability Agent",
+                "description": "Focused on environmental impact, carbon certificates, and sustainable products.",
+                "category": "sustainability"
+            },
+            {
+                "id": "security_analyst",
+                "name": "Security Analyst (SOC)",
+                "description": "Expert in log discovery, security event analysis, and SIEM monitoring.",
+                "category": "security"
+            },
+            {
+                "id": "generic",
+                "name": "Standard AI Assistant",
+                "description": "A neutral, helpful assistant for general knowledge base and database queries.",
+                "category": "general"
+            }
+        ]
+    }
+
 
 
 @router.get(
@@ -943,9 +1039,19 @@ async def get_available_llm_providers(
     Requires admin or super_admin role.
     """
     try:
-        from quickship_agent.llm_factory import LLMFactory
+        from app.services.query_service import get_llm
+        from app.config import GOOGLE_API_KEY, GROQ_API_KEY, GEMINI_MODELS, GROQ_MODELS
         
-        providers = LLMFactory.get_available_providers()
+        providers = {
+            "gemini": {
+                "available": bool(GOOGLE_API_KEY),
+                "models": GEMINI_MODELS
+            },
+            "groq": {
+                "available": bool(GROQ_API_KEY),
+                "models": GROQ_MODELS
+            }
+        }
         
         return {
             "providers": providers,

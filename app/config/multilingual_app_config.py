@@ -34,6 +34,13 @@ LANGUAGE_DETECTION_MIN_TEXT_LENGTH = int(os.getenv("LANGUAGE_DETECTION_MIN_TEXT_
 MULTILINGUAL_PROCESSING_ENABLED = os.getenv("MULTILINGUAL_PROCESSING_ENABLED", "true").lower() == "true"
 AUTO_DETECT_MULTILINGUAL_CONTENT = os.getenv("AUTO_DETECT_MULTILINGUAL_CONTENT", "true").lower() == "true"
 
+# --- RAG & Search Configuration ---
+CROSS_LANGUAGE_ENABLED = os.getenv("CROSS_LANGUAGE_ENABLED", "true").lower() == "true"
+SAME_LANGUAGE_BOOST = float(os.getenv("SAME_LANGUAGE_BOOST", "1.5"))
+CROSS_LANGUAGE_MIN_SIMILARITY = float(os.getenv("CROSS_LANGUAGE_MIN_SIMILARITY", "0.5"))
+MAX_CROSS_LANGUAGE_RESULTS = int(os.getenv("MAX_CROSS_LANGUAGE_RESULTS", "10"))
+LOG_CROSS_LANGUAGE_RETRIEVAL = os.getenv("LOG_CROSS_LANGUAGE_RETRIEVAL", "true").lower() == "true"
+
 # --- Collection Naming ---
 MULTILINGUAL_COLLECTION_SUFFIX = "_ml"
 LEGACY_COLLECTION_SUFFIX = ""
@@ -142,6 +149,10 @@ def get_multilingual_collection_name(tenant_id: str, kb_name: str) -> str:
         base_name = f"{tenant_id}_{kb_name}".replace("-", "_").lower()
     
     return f"{base_name}{MULTILINGUAL_COLLECTION_SUFFIX}"
+
+def should_use_multilingual_service(tenant_id: str = None) -> bool:
+    """Check if multilingual service should be used for a tenant."""
+    return is_tenant_multilingual_enabled(tenant_id)
 
 def should_use_multilingual_processing(tenant_id: str = None) -> bool:
     """Determine if multilingual processing should be used."""

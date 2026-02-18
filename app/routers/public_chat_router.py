@@ -145,8 +145,8 @@ async def query_public_chat(
                 detail="No knowledge bases configured for public chat"
             )
         
-        # Use multilingual RAG service for better compatibility
-        from agents.quickship_agent.services.multilingual_rag_service import get_multilingual_rag_service
+        # Use shared multilingual RAG service
+        from app.services.rag_service import RAGService
         from app.config.multilingual_app_config import should_use_multilingual_processing
         from ..services.qdrant_service import get_qdrant_client
         from ..services.tenant_service import get_tenant_service
@@ -193,21 +193,14 @@ async def query_public_chat(
         # Execute query using multilingual RAG service
         try:
             if should_use_multilingual_processing(tenant_id):
-                # Use multilingual RAG service
-                rag_service = get_multilingual_rag_service()
+                # Use shared multilingual RAG service
+                rag_service_instance = RAGService(db)
                 
-                # Convert chat history to simple list format
-                chat_history_simple = []
-                for msg in processed_chat_history:
-                    if hasattr(msg, 'content'):
-                        role = "user" if msg.__class__.__name__ == "HumanMessage" else "assistant"
-                        chat_history_simple.append({"role": role, "content": msg.content})
-                
-                answer = rag_service.execute_multilingual_query(
-                    collection_name=collection_name,
+                answer = await rag_service_instance.query_knowledge_base_multilingual(
+                    tenant_id=tenant_id,
+                    kb_name=kb_name,
                     query=request_data.query,
-                    user_language=None,  # Auto-detect
-                    chat_history=chat_history_simple
+                    chat_history=processed_chat_history
                 )
             else:
                 # Fallback to legacy service

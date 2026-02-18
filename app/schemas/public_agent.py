@@ -46,6 +46,7 @@ class PublicAgentChatResponse(BaseModel):
     sources: Optional[List[SourceInfo]] = Field(default=[], description="Source documents")
     tool_used: Optional[str] = Field(None, description="Tool that was used (database/knowledge_base)")
     session_id: str = Field(..., description="Session identifier")
+    agent_type: str = Field(..., description="Type of agent that processed the request")
     timestamp: str = Field(..., description="Response timestamp")
 
 
@@ -158,7 +159,7 @@ class AdminPublicAgentConfigUpdate(BaseModel):
 
     @validator('agent_type')
     def validate_agent_type(cls, v):
-        valid_agents = ['quickship', 'ecommerce', 'ecostance', 'realestate', 'generic']
+        valid_agents = ['quickship', 'ecommerce', 'ecostance', 'realestate', 'generic', 'security_analyst']
         if v not in valid_agents:
             raise ValueError(f"Invalid agent type: {v}. Must be one of: {', '.join(valid_agents)}")
         return v
@@ -167,7 +168,7 @@ class AdminPublicAgentConfigUpdate(BaseModel):
     def validate_allowed_tools(cls, v):
         valid_tools = [
             'tracking', 'payments', 'complaints', 'delivery_estimates', 'customer_search',
-            'certificates', 'shopping', 'impact', 'faq'
+            'certificates', 'shopping', 'impact', 'faq', 'siem'
         ]
         for tool in v:
             if tool not in valid_tools:
