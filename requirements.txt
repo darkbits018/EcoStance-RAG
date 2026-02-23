@@ -209,3 +209,6 @@ stripe
 razorpay
 mysql-connector-python
 aiofiles
+celery
+redis
+httpx
