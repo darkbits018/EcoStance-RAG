@@ -22,7 +22,7 @@ from agents.generic_agent.tools.kb_tools import (
     create_search_knowledge_base_tool,
     create_list_knowledge_bases_tool
 )
-from agents.generic_agent.tools.db_tools import create_db_query_tool
+from agents.generic_agent.tools.db_tools import create_db_query_tool, create_list_db_tables_tool
 
 # Use SIEM Discovery tools
 from .tools.siem_tools import (
@@ -34,14 +34,28 @@ from app.services.multilingual_utils import MultilingualAgentMixin
 logger = logging.getLogger(__name__)
 
 SECURITY_SYSTEM_PROMPTS = {
-    "en": """You are a Senior Security Analyst. Your role is to monitor, investigate, and analyze various data sources including security documentation, system logs, and company reference files.
-You have access to a Knowledge Base containing diverse data: system logs, company policies, SOPs, and even reference lists (like CSV contractor directories). You also have a Database for Asset Inventory.
+    "en": """You are an Expert Senior Security Analyst (SOC Assistant). 
+Your goal is to provide intelligent, summarized, and actionable security insights. 
 
-GUIDELINES:
-1. **Be a Data Detective**: Use the Knowledge Base to find any specific information requested, whether it's a log error, a policy rule, or contact details from an uploaded list.
-2. **Interrogate, Then Answer**: Cross-reference data sources. If you see suspicious activity documented in logs, look up the affected entity in the asset database.
-3. **Be Precise**: Use technical terminology correctly when appropriate, but be helpful with all inquiries. Cite your sources (e.g., "According to the GSA Contractor List in the knowledge base...").
-4. **Respond Professionally**: Maintain an analytical, helpful, and objective tone.
+### DATA SOURCE SELECTION RULES:
+1. **Database (SQL)**: USE FOR: "Top", "Count", "Sum", "List of Assets", "Frequency", or "Analytics".
+2. **Knowledge Base (RAG)**: USE FOR: "How to", "Policy", "SOP", or searching raw text/logs.
+3. **ONLY USE SEARCH TOOLS** if a source is listed as 'Active' in your context.
+
+### INTELLIGENCE & FORMATTING RULES:
+1. **NO RAW DATA DUMPS**: NEVER just list raw database rows, IP lists, or long strings of IDs. 
+2. **SUMMARIZE & ANALYZE**: 
+   - Instead of "Found 10 alerts", say "A total of 10 high-severity alerts were identified, primarily originating from the DMZ."
+   - Categorize findings (e.g., "The top 3 attack types are SQL Injection, Brute Force, and XSS").
+3. **EXPERT CONTEXT**: Provide a security-focused explanation. If you see Tor exit nodes or failed logins, explain the risk.
+4. **ACTIONABLE RECOMMENDATIONS**: Always conclude with a brief "Recommended Action" (e.g., "Immediate endpoint isolation recommended for infected hosts").
+5. **HUMAN-FRIENDLY NAMES**: If you find IDs in a database, try to cross-reference or describe them by their types or names if available. Avoid strings like "Sensors with ids 1, 3, 5". Say "Sensors in the Finance and HR segments" if possible.
+6. **BE PROFESSIONAL**: Use an analytical, objective, and authoritative tone.
+
+### EXAMPLE OF EXPERT RESPONSE:
+**User**: Show critical alerts in last 24 hours
+**Expert Analysis**: In the last 24 hours, **7 critical alerts** were detected across the network. The most significant threats include multiple **SQL injection attempts** targeting the primary web gateway and three instances of **suspicious PowerShell execution** on endpoint EDR-WIN-22. 
+**Recommended Action**: Immediate review of web application logs and endpoint isolation of EDR-WIN-22 for deeper forensic analysis.
 """
 }
 
@@ -63,46 +77,57 @@ class SecurityAnalystService(MultilingualAgentMixin):
             )
             
         self.tenant_id = tenant_id
+        db_conn = kwargs.get('database_connection')
         
         # Initialize basic tools
         self.tools = [
             create_search_knowledge_base_tool(tenant_id),
             create_list_knowledge_bases_tool(tenant_id),
             search_siem_logs,
-            get_log_volume_stats
+            get_log_volume_stats,
+            create_db_query_tool(db_conn, tenant_id=tenant_id),
+            create_list_db_tables_tool(db_conn, tenant_id=tenant_id)
         ]
-        
-        # Only add DB tool if a connection is provided
-        db_conn = kwargs.get('database_connection')
-        if db_conn:
-            self.tools.append(create_db_query_tool(db_conn))
             
         self.tool_map = {tool.name: tool for tool in self.tools}
         self.conversations: Dict[str, List[Dict]] = {}
 
-    def _get_dynamic_system_prompt(self, lang: str = "en"):
+    def _get_dynamic_system_prompt(self, lang: str = "en", kb_name: str = None, db_name: str = None):
         """Generate system prompt filtered by actually available tools."""
         base_prompt = SECURITY_SYSTEM_PROMPTS.get(lang, SECURITY_SYSTEM_PROMPTS["en"])
         
         tool_details = []
         if "search_knowledge_base" in self.tool_map:
-            tool_details.append("- search_knowledge_base: ACCESS LOGS & DOCS. Search for system logs, SOPs, security policies, and incident response playbooks.")
+            tool_details.append("- search_knowledge_base: ACCESS DOCS & LOG FILES. Use for policies, SOPs, and raw document searches.")
         if "list_available_knowledge_bases" in self.tool_map:
-            tool_details.append("- list_available_knowledge_bases: List the names of all log collections or policy folders available.")
+            tool_details.append("- list_available_knowledge_bases: List the names of available document collections.")
+        if "list_database_tables" in self.tool_map:
+             tool_details.append("- list_database_tables: DISCOVER DATA SCHEMA. List all tables in the SQL database. CALL THIS FIRST if you need to perform quantitative analysis.")
         if "query_database" in self.tool_map:
-            tool_details.append("- query_database: DB ACCESS. Query the asset inventory or user directory table.")
+            tool_details.append("- query_database: SQL ANALYSIS. Run SELECT queries for analytics, counts, and asset lookups.")
+
+        active_sources = []
+        if kb_name:
+            active_sources.append(f"- **Active Knowledge Base**: '{kb_name}'. Use for documentation search.")
+        if db_name:
+            active_sources.append(f"- **Active Database**: '{db_name}'. **PRIORITIZE THIS** for analytics, top counts, and structured data.")
+        else:
+            from app.routers import db_router
+            if db_router.db_connector and (db_router.db_connector.engine or db_router.db_connector.client):
+                 active_sources.append("- **Active Database**: [CONNECTED]. **PRIORITIZE THIS** for analytical queries like 'top IPs' or 'count'. Check tables via list_database_tables first.")
+
+        sources_section = f"### CURRENTLY SELECTED SOURCES:\n{chr(10).join(active_sources)}\n\n" if active_sources else ""
 
         return f"""{base_prompt}
 
-### AVAILABLE TOOLS:
+{sources_section}### AVAILABLE TOOLS:
 {chr(10).join(tool_details)}
 
 ### INVESTIGATION STRATEGY:
-- **IMPORTANT**: If you do not know the exact name of the log collection or knowledge base, you MUST call `list_available_knowledge_bases` first. Do not guess names like 'policies' or use filenames as the `kb_name`.
-- All system logs, task IDs, contractor lists (CSV/XLSX), and policies are stored in the Knowledge Base. Use `search_knowledge_base` to find any information asked by the user once you have the correct collection name.
-- Use `query_database` to look up hardware or user details related to findings in the logs or documents.
-- If the user asks about an external company or vendor, check the Knowledge Base first for any uploaded directories or contractor lists.
-- If `search_knowledge_base` fails with an "Error: Knowledge base '...' does not exist", immediately call `list_available_knowledge_bases` to correct your knowledge and try again.
+- **STEP 1**: If the query involves "Top", "Count", "Summary", "Analytics", or "Listing" of any assets, you **MUST** call `list_database_tables` (to see the tables AND their column names) and then `query_database`.
+- **STEP 2**: If the query involves "Policy", "Procedure", "SOP", or "Raw Logs", call `search_knowledge_base`.
+- **STEP 3**: If you search the Knowledge Base and see results that look like structured log entries, check if those logs are also available in the Database for better analytical querying.
+- **CRITICAL**: Do NOT guess table or column names. The metadata provided in `list_database_tables` is the ONLY source of truth for the schema.
 """
 
     def chat(self, session_id: str, message: str, user_language: str = None, chat_history: List[Dict] = None, **kwargs) -> Dict:
@@ -119,7 +144,10 @@ class SecurityAnalystService(MultilingualAgentMixin):
             
             self.conversations[session_id].append({"role": "user", "content": message})
             
-            system_prompt = self._get_dynamic_system_prompt(preferred_lang)
+            kb_name = kwargs.get('knowledge_base')
+            db_name = kwargs.get('database_connection')
+            
+            system_prompt = self._get_dynamic_system_prompt(preferred_lang, kb_name=kb_name, db_name=db_name)
             tool_descriptions = "\n".join([f"- {t.name}: {t.description}" for t in self.tools])
             
             max_iterations = 8
@@ -145,23 +173,37 @@ class SecurityAnalystService(MultilingualAgentMixin):
                 is_last_turn = (iteration == max_iterations)
                 instruction = f"""
 ### MANDATORY RESPONSE FORMAT:
-You MUST respond with a valid JSON object only. 
+You MUST respond with EXACTLY ONE valid JSON object only. 
+DO NOT include any text outside the JSON. 
+DO NOT simulate tool results or "TOOL_RESULT" blocks.
+DO NOT provide multiple JSON blocks.
 
-If you need more data (e.g. searching the GSA list), use a tool:
-{{
-    "tool": "tool_name",
-    "args": {{"kb_name": "...", "query": "..."}},
-    "reasoning": "Why I need this"
-}}
+1. ANALYZE PREVIOUS TOOL RESULTS:
+   - If a tool result contains an error like "No such column" or "Invalid column", you MUST call `list_database_tables` immediately to find the correct schema.
+   - If the previous tool result contains the answer, output the final answer using the 'none' tool immediately.
+   - Do NOT search again for the same thing.
 
-If you have found the final answer (e.g. the address) or this is your last turn:
-{{
-    "tool": "none",
-    "response": "Final answer for the user goes here",
-    "type": "text"
-}}
+### DATABASE DISCOVERY RULE:
+- If a Database is connected and you need to query it:
+  1. You MUST call `list_database_tables` first to see the schema (unless you did so in this session).
+  2. NEVER guess column names. Use the exact names from `list_database_tables`.
 
-{ "CRITICAL: This is your LAST turn of 8 allowed. You MUST provide the final response in the 'none' tool now. Do not call any other tools." if is_last_turn else f"Turn {iteration}/{max_iterations}. If previous search failed, use 'list_available_knowledge_bases' immediately." }
+2. CHOOSE YOUR ACTION:
+   - If you need more data (e.g. searching logs):
+     {{
+         "tool": "tool_name",
+         "args": {{"kb_name": "...", "query": "..."}},
+         "reasoning": "What specific new information I need."
+     }}
+   
+   - If you have the answer OR if the search failed multiple times:
+     {{
+         "tool": "none",
+         "response": "Final Expert Analysis: Your human-friendly final answer here. DO NOT list raw IDs (like 1, 2, 3), use sensor names or categories instead. Include a 'Recommended Action'.",
+         "type": "text"
+     }}
+
+{ "CRITICAL: This is your LAST turn of 8. You MUST provide the final response in the 'none' tool now." if is_last_turn else f"Turn {iteration}/{max_iterations}." }
 """
                 lc_messages.append(SystemMessage(content=instruction))
                 
@@ -170,36 +212,78 @@ If you have found the final answer (e.g. the address) or this is your last turn:
                 text = result.content
                 logger.info(f"LLM Response received ({len(text)} chars)")
                 
+                # Robust JSON extraction: look for the first '{' and corresponding '}' or just the first JSON-like block
+                import re
                 match = re.search(r'\{.*\}', text, re.DOTALL)
-                if not match:
-                    # Non-JSON response: treating as final
-                    final_text = text
-                    self.conversations[session_id].append({"role": "assistant", "content": final_text})
-                    return {"response": final_text, "session_id": session_id, "language": preferred_lang, "success": True}
+                
+                decision = None
+                if match:
+                    json_str = match.group(0)
+                    # Handle cases where LLM might include multiple JSON blocks or trailing text
+                    try:
+                        decision = json.loads(json_str)
+                    except json.JSONDecodeError:
+                        # Try to find the FIRST JSON object if the greedy one fails
+                        first_match = re.search(r'\{.*?\}', text, re.DOTALL)
+                        if first_match:
+                            try:
+                                decision = json.loads(first_match.group(0))
+                            except:
+                                pass
 
-                try:
-                    decision = json.loads(match.group(0))
-                except json.JSONDecodeError:
+                if not decision:
+                    # Non-JSON response or parsing failed: treating as final if it looks like a message
                     final_text = text
                     self.conversations[session_id].append({"role": "assistant", "content": final_text})
-                    return {"response": final_text, "session_id": session_id, "success": True}
+                    return {"content": final_text, "session_id": session_id, "language": preferred_lang, "success": True}
 
                 tool_name = decision.get('tool')
                 
                 if tool_name == 'none' or not tool_name or is_last_turn:
                     final_text = decision.get('response', decision.get('reasoning', text))
                     self.conversations[session_id].append({"role": "assistant", "content": final_text})
-                    return {"response": final_text, "session_id": session_id, "language": preferred_lang, "success": True}
+                    return {"content": final_text, "session_id": session_id, "language": preferred_lang, "success": True}
                 
                 if tool_name in self.tool_map:
                     args = decision.get('args', {})
+                    
+                    # STRICT SELECTION ENFORCEMENT
+                    if tool_name in ["query_database", "list_database_tables"]:
+                         if not db_name:
+                              from app.routers import db_router
+                              if not (db_router.db_connector and (db_router.db_connector.engine or db_router.db_connector.client)):
+                                   err_msg = "Database tool called but no Database is currently connected. Please connect a database from the sidebar."
+                                   self.conversations[session_id].append({"role": "assistant", "content": err_msg})
+                                   return {"response": err_msg, "session_id": session_id, "success": True}
+
+                    if tool_name == "search_knowledge_base":
+                        if kb_name:
+                            if args.get("kb_name") != kb_name:
+                                logger.info(f"Forcing knowledge base from '{args.get('kb_name')}' to '{kb_name}'")
+                                args["kb_name"] = kb_name
+                        elif not args.get("kb_name"):
+                            kb_msg = "Please select a Knowledge Base from the sidebar before searching documents."
+                            self.conversations[session_id].append({"role": "assistant", "content": kb_msg})
+                            return {"response": kb_msg, "session_id": session_id, "success": True}
+
                     logger.info(f"Executing {tool_name} with {args}")
+                    
+                    # CRITICAL FIX: Add the assistant's thought/tool call to history so it knows it just asked for this
+                    self.conversations[session_id].append({
+                        "role": "assistant",
+                        "content": json.dumps(decision)
+                    })
+
                     try:
                         tool_result = self.tool_map[tool_name].invoke(args)
                         # Add tool result as system message and loop
+                        result_content = str(tool_result)
+                        if len(result_content) > 5000:
+                            result_content = result_content[:5000] + "... [truncated]"
+                        
                         self.conversations[session_id].append({
                             "role": "system", 
-                            "content": f"Result for {tool_name}({args}): {str(tool_result)}"
+                            "content": f"TOOL_RESULT ({tool_name}): {result_content}"
                         })
                     except Exception as te:
                         logger.error(f"Tool error: {te}")
@@ -216,11 +300,11 @@ If you have found the final answer (e.g. the address) or this is your last turn:
             # Exhausted iterations
             final_text = "I've analyzed the available sources but could not find a definitive answer. Please provide more clues or try a different query."
             self.conversations[session_id].append({"role": "assistant", "content": final_text})
-            return {"response": final_text, "session_id": session_id, "language": preferred_lang, "success": True}
+            return {"content": final_text, "session_id": session_id, "language": preferred_lang, "success": True}
             
         except Exception as e:
             logger.error(f"Security Analyst Error: {e}")
-            return {"response": "An internal error occurred during analysis.", "session_id": session_id, "success": False}
+            return {"content": "An internal error occurred during analysis.", "session_id": session_id, "success": False}
 
     def get_conversation_history(self, session_id: str) -> List[Dict]:
         return self.conversations.get(session_id, [])
